@@ -145,7 +145,7 @@ class HandTracker:
 
         self.device = dai.Device()
 
-        if input_src == None or input_src == "rgb" or input_src == "rgb_laconic":
+        if input_src is None or input_src == "rgb" or input_src == "rgb_laconic":
             # Note that here (in Host mode), specifying "rgb_laconic" has no effect
             # Color camera frames are systematically transferred to the host
             self.input_type = "rgb"  # OAK* internal color camera
