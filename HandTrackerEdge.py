@@ -21,6 +21,7 @@ TEMPLATE_MANAGER_SCRIPT_DUO = str(SCRIPT_DIR / "template_manager_script_duo.py")
 
 
 def to_planar(arr: np.ndarray, shape: tuple) -> np.ndarray:
+    # noinspection PyUnresolvedReferences
     return cv2.resize(arr, shape).transpose(2, 0, 1).flatten()
 
 
@@ -274,6 +275,7 @@ class HandTracker:
 
         # Define manager script node
         manager_script = pipeline.create(dai.node.Script)
+        # noinspection PyUnresolvedReferences
         manager_script.setScript(self.build_manager_script())
 
         if self.xyz:
@@ -470,20 +472,26 @@ class HandTracker:
             video_frame = np.zeros((self.img_h, self.img_w, 3), dtype=np.uint8)
         else:
             in_video = self.q_video.get()
+            # noinspection PyUnresolvedReferences
             video_frame = in_video.getCvFrame()       
 
         # For debugging
         if self.trace & 4:
             pre_pd_manip = self.q_pre_pd_manip_out.tryGet()
             if pre_pd_manip:
+                # noinspection PyUnresolvedReferences
                 pre_pd_manip = pre_pd_manip.getCvFrame()
+                # noinspection PyUnresolvedReferences
                 cv2.imshow("pre_pd_manip", pre_pd_manip)
             pre_lm_manip = self.q_pre_lm_manip_out.tryGet()
             if pre_lm_manip:
+                # noinspection PyUnresolvedReferences
                 pre_lm_manip = pre_lm_manip.getCvFrame()
+                # noinspection PyUnresolvedReferences
                 cv2.imshow("pre_lm_manip", pre_lm_manip)
 
         # Get result from device
+        # noinspection PyUnresolvedReferences
         res = marshal.loads(self.q_manager_out.get().getData())
         hands = []
         for i in range(len(res.get("lm_score", []))):
