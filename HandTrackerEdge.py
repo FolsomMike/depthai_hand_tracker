@@ -83,27 +83,27 @@ class HandTracker:
                       
     """
     def __init__(self, input_src=None,
-                pd_model=PALM_DETECTION_MODEL, 
-                pd_score_thresh=0.5, pd_nms_thresh=0.3,
-                use_lm=True,
-                lm_model="lite",
-                lm_score_thresh=0.5,
-                use_world_landmarks=False,
-                pp_model=DETECTION_POSTPROCESSING_MODEL,
-                solo=True,
-                xyz=False,
-                crop=False,
-                internal_fps=None,
-                resolution="full",
-                internal_frame_height=640,
-                use_gesture=False,
-                use_handedness_average=True,
-                single_hand_tolerance_thresh=10,
-                use_same_image=True,
-                lm_nb_threads=2,
-                stats=False,
-                trace=0
-                ):
+                 pd_model=PALM_DETECTION_MODEL,
+                 pd_score_thresh=0.5, pd_nms_thresh=0.3,
+                 use_lm=True,
+                 lm_model="lite",
+                 lm_score_thresh=0.5,
+                 use_world_landmarks=False,
+                 pp_model=DETECTION_POSTPROCESSING_MODEL,
+                 solo=True,
+                 xyz=False,
+                 crop=False,
+                 internal_fps=None,
+                 resolution="full",
+                 internal_frame_height=640,
+                 use_gesture=False,
+                 use_handedness_average=True,
+                 single_hand_tolerance_thresh=10,
+                 use_same_image=True,
+                 lm_nb_threads=2,
+                 stats=False,
+                 trace=0
+                 ):
 
         self.use_lm = use_lm
         if not use_lm:
@@ -116,7 +116,7 @@ class HandTracker:
         elif lm_model == "lite":
             self.lm_model = LANDMARK_MODEL_LITE
         elif lm_model == "sparse":
-                self.lm_model = LANDMARK_MODEL_SPARSE
+            self.lm_model = LANDMARK_MODEL_SPARSE
         else:
             self.lm_model = lm_model
         print(f"Landmark blob           : {self.lm_model}")
