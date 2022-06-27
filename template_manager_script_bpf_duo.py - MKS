@@ -9,6 +9,7 @@ sqn_ : normalized [0:1] coordinates in squared input image
 import marshal
 from math import sin, cos, atan2, pi, degrees, floor, dist
 
+# noinspection
 
 pad_h = ${_pad_h}
 img_h = ${_img_h}
