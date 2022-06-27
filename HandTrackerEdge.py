@@ -105,6 +105,9 @@ class HandTracker:
                  trace=0
                  ):
 
+        self.pd_input_length: int = 0
+        self.lm_input_length: int = 0
+
         self.use_lm = use_lm
         if not use_lm:
             print("use_lm=False is not supported in Edge mode.")
