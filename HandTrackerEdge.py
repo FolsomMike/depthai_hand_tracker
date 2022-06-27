@@ -43,13 +43,14 @@ class HandTracker:
                     - 'lite' for LANDMARK_MODEL_LITE,
                     - 'sparse' for LANDMARK_MODEL_SPARSE,
                     - a path of a blob file.  
-    - lm_score_thresh : confidence score to determine whether landmarks prediction is reliable (a float between 0 and 1).
+    - lm_score_thresh : confidence score to determine whether landmarks prediction is reliable(a float between 0 and 1).
     - use_world_landmarks: boolean. The landmarks model yields 2 types of 3D coordinates : 
                     - coordinates expressed in pixels in the image, always stored in hand.landmarks,
                     - coordinates expressed in meters in the world, stored in hand.world_landmarks 
                     only if use_world_landmarks is True.
     - pp_model: path to the detection post processing model,
-    - solo: boolean, when True detect one hand max (much faster since we run the pose detection model only if no hand was detected in the previous frame)
+    - solo: boolean, when True detect one hand max (much faster since we run the pose detection model only if no hand
+                    was detected in the previous frame)
                     On edge mode, always True
     - xyz : boolean, when True calculate the (x, y, z) coords of the detected palms.
     - crop : boolean which indicates if square cropping on source images is applied or not
@@ -68,9 +69,10 @@ class HandTracker:
                     the next time you will run it. 'single_hand_tolerance_thresh' is the number of 
                     frames during only one hand is detected before palm detection is run again.   
     - lm_nb_threads : 1 or 2 (default=2), number of inference threads for the landmark model
-    - use_same_image (Edge Duo mode only) : boolean, when True, use the same image when inferring the landmarks of the 2 hands
+    - use_same_image (Edge Duo mode only) : boolean, when True, use the same image when inferring the landmarks of the
+                    2 hands
                     (setReusePreviousImage(True) in the ImageManip node before the landmark model). 
-                    When True, the FPS is significantly higher but the skeleton may appear shifted on one of the 2 hands.
+                    When True, FPS is significantly higher but the skeleton may appear shifted on one of the 2 hands.
     - stats : boolean, when True, display some statistics when exiting.   
     - trace : int, 0 = no trace, otherwise print some debug messages or show output of ImageManip nodes
             if trace & 1, print application level info like number of palm detections,
@@ -185,9 +187,10 @@ class HandTracker:
                     self.internal_fps = 39
             else:
                 self.internal_fps = internal_fps 
-            print(f"Internal camera FPS set to: {self.internal_fps}") 
+            print(f"Internal camera FPS set to: {self.internal_fps}")
 
-            self.video_fps = self.internal_fps  # Used when saving the output in a video file. Should be close to the real fps
+            # Used when saving the output in a video file. Should be close to the real fps
+            self.video_fps = self.internal_fps
 
             if self.crop:
                 self.frame_size, self.scale_nd = mpu.find_isp_scale_params(internal_frame_height, self.resolution)
@@ -195,7 +198,8 @@ class HandTracker:
                 self.pad_w = self.pad_h = 0
                 self.crop_w = (int(round(self.resolution[0] * self.scale_nd[0] / self.scale_nd[1])) - self.img_w) // 2
             else:
-                width, self.scale_nd = mpu.find_isp_scale_params(internal_frame_height * self.resolution[0] / self.resolution[1], self.resolution, is_height=False)
+                width, self.scale_nd = mpu.find_isp_scale_params(internal_frame_height * self.resolution[0] /
+                                                                 self.resolution[1], self.resolution, is_height=False)
                 self.img_h = int(round(self.resolution[1] * self.scale_nd[0] / self.scale_nd[1]))
                 self.img_w = int(round(self.resolution[0] * self.scale_nd[0] / self.scale_nd[1]))
                 self.pad_h = (self.img_w - self.img_h) // 2
@@ -423,7 +427,8 @@ class HandTracker:
         hand.rect_y_center_a = res["rect_center_y"][hand_idx] * self.frame_size
         hand.rect_w_a = hand.rect_h_a = res["rect_size"][hand_idx] * self.frame_size
         hand.rotation = res["rotation"][hand_idx] 
-        hand.rect_points = mpu.rotated_rect_to_points(hand.rect_x_center_a, hand.rect_y_center_a, hand.rect_w_a, hand.rect_h_a, hand.rotation)
+        hand.rect_points = mpu.rotated_rect_to_points(hand.rect_x_center_a, hand.rect_y_center_a, hand.rect_w_a,
+                                                      hand.rect_h_a, hand.rotation)
         hand.lm_score = res["lm_score"][hand_idx]
         hand.handedness = res["handedness"][hand_idx]
         hand.label = "right" if hand.handedness > 0.5 else "left"
@@ -432,7 +437,10 @@ class HandTracker:
         if self.xyz:
             hand.xyz = np.array(res["xyz"][hand_idx])
             hand.xyz_zone = res["xyz_zone"][hand_idx]
-        # If we added padding to make the image square, we need to remove this padding from landmark coordinates and from rect_points
+
+        # If we added padding to make the image square, we need to remove this padding from landmark coordinates and
+        # from rect_points
+
         if self.pad_h > 0:
             hand.landmarks[:, 1] -= self.pad_h
             for i in range(len(hand.rect_points)):
@@ -485,7 +493,7 @@ class HandTracker:
                 self.nb_frames_pd_inference += 1
             else:
                 if res["nb_lm_inf"] > 0:
-                     self.nb_frames_lm_inference_after_landmarks_ROI += 1
+                    self.nb_frames_lm_inference_after_landmarks_ROI += 1
             if res["nb_lm_inf"] == 0:
                 self.nb_frames_no_hand += 1
             else:
@@ -501,10 +509,18 @@ class HandTracker:
         if self.stats:
             nb_frames = self.fps.nb_frames()
             print(f"FPS : {self.fps.get_global():.1f} f/s (# frames = {nb_frames})")
-            print(f"# frames w/ no hand           : {self.nb_frames_no_hand} ({100*self.nb_frames_no_hand/nb_frames:.1f}%)")
-            print(f"# frames w/ palm detection    : {self.nb_frames_pd_inference} ({100*self.nb_frames_pd_inference/nb_frames:.1f}%)")
-            print(f"# frames w/ landmark inference : {self.nb_frames_lm_inference} ({100*self.nb_frames_lm_inference/nb_frames:.1f}%)- # after palm detection: {self.nb_frames_lm_inference - self.nb_frames_lm_inference_after_landmarks_ROI} - # after landmarks ROI prediction: {self.nb_frames_lm_inference_after_landmarks_ROI}")
+            print(f"# frames w/ no hand           : "
+                  f"{self.nb_frames_no_hand} ({100*self.nb_frames_no_hand/nb_frames:.1f}%)")
+            print(f"# frames w/ palm detection    : {self.nb_frames_pd_inference}"
+                  f" ({100*self.nb_frames_pd_inference/nb_frames:.1f}%)")
+            print(f"# frames w/ landmark inference : {self.nb_frames_lm_inference}"
+                  f" ({100*self.nb_frames_lm_inference/nb_frames:.1f}%)- # after palm detection: "
+                  f"{self.nb_frames_lm_inference - self.nb_frames_lm_inference_after_landmarks_ROI}"
+                  f" - # after landmarks ROI prediction: {self.nb_frames_lm_inference_after_landmarks_ROI}")
             if not self.solo:
-                print(f"On frames with at least one landmark inference, average number of landmarks inferences/frame: {self.nb_lm_inferences/self.nb_frames_lm_inference:.2f}")
+                print(f"On frames with at least one landmark inference, average number of landmarks inferences/frame:"
+                      f" {self.nb_lm_inferences/self.nb_frames_lm_inference:.2f}")
             if self.nb_lm_inferences:
-                print(f"# lm inferences: {self.nb_lm_inferences} - # failed lm inferences: {self.nb_failed_lm_inferences} ({100*self.nb_failed_lm_inferences/self.nb_lm_inferences:.1f}%)")
+                print(f"# lm inferences: {self.nb_lm_inferences} - # failed lm inferences:"
+                      f" {self.nb_failed_lm_inferences}"
+                      f" ({100*self.nb_failed_lm_inferences/self.nb_lm_inferences:.1f}%)")
