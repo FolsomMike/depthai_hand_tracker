@@ -274,6 +274,7 @@ class HandTracker:
             cam.video.link(cam_out.input)
 
         # Define manager script node
+        # noinspection PyTypeChecker
         manager_script = pipeline.create(dai.node.Script)
         # noinspection PyUnresolvedReferences
         manager_script.setScript(self.build_manager_script())
@@ -318,6 +319,7 @@ class HandTracker:
 
             stereo.depth.link(spatial_location_calculator.inputDepth)
 
+            # noinspection PyUnresolvedReferences
             manager_script.outputs['spatial_location_config'].link(spatial_location_calculator.inputConfig)
             spatial_location_calculator.out.link(manager_script.inputs['spatial_data'])
 
@@ -329,6 +331,7 @@ class HandTracker:
         pre_pd_manip.inputImage.setQueueSize(1)
         pre_pd_manip.inputImage.setBlocking(False)
         cam.preview.link(pre_pd_manip.inputImage)
+        # noinspection PyUnresolvedReferences
         manager_script.outputs['pre_pd_manip_cfg'].link(pre_pd_manip.inputConfig)
 
         # For debugging
@@ -353,6 +356,7 @@ class HandTracker:
         # Define link to send result to host 
         manager_out = pipeline.create(dai.node.XLinkOut)
         manager_out.setStreamName("manager_out")
+        # noinspection PyUnresolvedReferences
         manager_script.outputs['host'].link(manager_out.input)
 
         # Define landmark pre processing image manip
@@ -371,6 +375,7 @@ class HandTracker:
             pre_lm_manip_out.setStreamName("pre_lm_manip_out")
             pre_lm_manip.out.link(pre_lm_manip_out.input)
 
+        # noinspection PyUnresolvedReferences
         manager_script.outputs['pre_lm_manip_cfg'].link(pre_lm_manip.inputConfig)
 
         # Define landmark model
