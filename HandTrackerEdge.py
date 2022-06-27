@@ -1,13 +1,10 @@
 import numpy as np
-from collections import namedtuple
 
-from numpy.lib.arraysetops import isin
 import mediapipe_utils as mpu
 import depthai as dai
 import cv2
 from pathlib import Path
-from FPS import FPS, now
-import time
+from FPS import FPS
 import sys
 from string import Template
 import marshal
@@ -24,7 +21,7 @@ TEMPLATE_MANAGER_SCRIPT_DUO = str(SCRIPT_DIR / "template_manager_script_duo.py")
 
 
 def to_planar(arr: np.ndarray, shape: tuple) -> np.ndarray:
-    return cv2.resize(arr, shape).transpose(2,0,1).flatten()
+    return cv2.resize(arr, shape).transpose(2, 0, 1).flatten()
 
 
 class HandTracker:
@@ -60,7 +57,7 @@ class HandTracker:
     - resolution : sensor resolution "full" (1920x1080) or "ultra" (3840x2160),
     - internal_frame_height : when using the internal color camera, set the frame height (calling setIspScale()).
                     The width is calculated accordingly to height and depends on value of 'crop'
-    - use_gesture : boolean, when True, recognize hand poses froma predefined set of poses
+    - use_gesture : boolean, when True, recognize hand poses from a predefined set of poses
                     (ONE, TWO, THREE, FOUR, FIVE, OK, PEACE, FIST)
     - use_handedness_average : boolean, when True the handedness is the average of the last collected handednesses.
                     This brings robustness since the inferred robustness is not reliable on ambiguous hand poses.
@@ -90,7 +87,7 @@ class HandTracker:
                 lm_model="lite",
                 lm_score_thresh=0.5,
                 use_world_landmarks=False,
-                pp_model = DETECTION_POSTPROCESSING_MODEL,
+                pp_model=DETECTION_POSTPROCESSING_MODEL,
                 solo=True,
                 xyz=False,
                 crop=False,
@@ -149,8 +146,8 @@ class HandTracker:
         if input_src == None or input_src == "rgb" or input_src == "rgb_laconic":
             # Note that here (in Host mode), specifying "rgb_laconic" has no effect
             # Color camera frames are systematically transferred to the host
-            self.input_type = "rgb" # OAK* internal color camera
-            self.laconic = input_src == "rgb_laconic" # Camera frames are not sent to the host
+            self.input_type = "rgb"  # OAK* internal color camera
+            self.laconic = input_src == "rgb_laconic"  # Camera frames are not sent to the host
             if resolution == "full":
                 self.resolution = (1920, 1080)
             elif resolution == "ultra":
@@ -190,7 +187,7 @@ class HandTracker:
                 self.internal_fps = internal_fps 
             print(f"Internal camera FPS set to: {self.internal_fps}") 
 
-            self.video_fps = self.internal_fps # Used when saving the output in a video file. Should be close to the real fps
+            self.video_fps = self.internal_fps  # Used when saving the output in a video file. Should be close to the real fps
 
             if self.crop:
                 self.frame_size, self.scale_nd = mpu.find_isp_scale_params(internal_frame_height, self.resolution)
@@ -234,13 +231,12 @@ class HandTracker:
         self.nb_failed_lm_inferences = 0
         self.nb_frames_lm_inference_after_landmarks_ROI = 0
         self.nb_frames_no_hand = 0
-        
 
     def create_pipeline(self):
         print("Creating pipeline...")
         # Start defining a pipeline
         pipeline = dai.Pipeline()
-        pipeline.setOpenVINOVersion(version = dai.OpenVINO.Version.VERSION_2021_4)
+        pipeline.setOpenVINOVersion(version=dai.OpenVINO.Version.VERSION_2021_4)
         self.pd_input_length = 128
 
         # ColorCamera
@@ -380,32 +376,34 @@ class HandTracker:
         return pipeline        
     
     def build_manager_script(self):
-        '''
+
+        """
         The code of the scripting node 'manager_script' depends on :
             - the score threshold,
             - the video frame shape
         So we build this code from the content of the file template_manager_script_*.py which is a python template
-        '''
+        """
+
         # Read the template
         with open(TEMPLATE_MANAGER_SCRIPT_SOLO if self.solo else TEMPLATE_MANAGER_SCRIPT_DUO, 'r') as file:
             template = Template(file.read())
         
         # Perform the substitution
         code = template.substitute(
-                    _TRACE1 = "node.warn" if self.trace & 1 else "#",
-                    _TRACE2 = "node.warn" if self.trace & 2 else "#",
-                    _pd_score_thresh = self.pd_score_thresh,
-                    _lm_score_thresh = self.lm_score_thresh,
-                    _pad_h = self.pad_h,
-                    _img_h = self.img_h,
-                    _img_w = self.img_w,
-                    _frame_size = self.frame_size,
-                    _crop_w = self.crop_w,
-                    _IF_XYZ = "" if self.xyz else '"""',
-                    _IF_USE_HANDEDNESS_AVERAGE = "" if self.use_handedness_average else '"""',
-                    _single_hand_tolerance_thresh= self.single_hand_tolerance_thresh,
-                    _IF_USE_SAME_IMAGE = "" if self.use_same_image else '"""',
-                    _IF_USE_WORLD_LANDMARKS = "" if self.use_world_landmarks else '"""',
+                    _TRACE1="node.warn" if self.trace & 1 else "#",
+                    _TRACE2="node.warn" if self.trace & 2 else "#",
+                    _pd_score_thresh=self.pd_score_thresh,
+                    _lm_score_thresh=self.lm_score_thresh,
+                    _pad_h=self.pad_h,
+                    _img_h=self.img_h,
+                    _img_w=self.img_w,
+                    _frame_size=self.frame_size,
+                    _crop_w=self.crop_w,
+                    _IF_XYZ="" if self.xyz else '"""',
+                    _IF_USE_HANDEDNESS_AVERAGE="" if self.use_handedness_average else '"""',
+                    _single_hand_tolerance_thresh=self.single_hand_tolerance_thresh,
+                    _IF_USE_SAME_IMAGE="" if self.use_same_image else '"""',
+                    _IF_USE_WORLD_LANDMARKS="" if self.use_world_landmarks else '"""',
         )
         # Remove comments and empty lines
         import re
@@ -429,18 +427,18 @@ class HandTracker:
         hand.lm_score = res["lm_score"][hand_idx]
         hand.handedness = res["handedness"][hand_idx]
         hand.label = "right" if hand.handedness > 0.5 else "left"
-        hand.norm_landmarks = np.array(res['rrn_lms'][hand_idx]).reshape(-1,3)
-        hand.landmarks = (np.array(res["sqn_lms"][hand_idx]) * self.frame_size).reshape(-1,2).astype(np.int)
+        hand.norm_landmarks = np.array(res['rrn_lms'][hand_idx]).reshape(-1, 3)
+        hand.landmarks = (np.array(res["sqn_lms"][hand_idx]) * self.frame_size).reshape(-1, 2).astype(np.int)
         if self.xyz:
             hand.xyz = np.array(res["xyz"][hand_idx])
             hand.xyz_zone = res["xyz_zone"][hand_idx]
         # If we added padding to make the image square, we need to remove this padding from landmark coordinates and from rect_points
         if self.pad_h > 0:
-            hand.landmarks[:,1] -= self.pad_h
+            hand.landmarks[:, 1] -= self.pad_h
             for i in range(len(hand.rect_points)):
                 hand.rect_points[i][1] -= self.pad_h
         if self.pad_w > 0:
-            hand.landmarks[:,0] -= self.pad_w
+            hand.landmarks[:, 0] -= self.pad_w
             for i in range(len(hand.rect_points)):
                 hand.rect_points[i][0] -= self.pad_w
 
@@ -448,7 +446,8 @@ class HandTracker:
         if self.use_world_landmarks:
             hand.world_landmarks = np.array(res["world_lms"][hand_idx]).reshape(-1, 3)
 
-        if self.use_gesture: mpu.recognize_gesture(hand)
+        if self.use_gesture:
+            mpu.recognize_gesture(hand)
 
         return hand
 
@@ -476,7 +475,7 @@ class HandTracker:
         # Get result from device
         res = marshal.loads(self.q_manager_out.get().getData())
         hands = []
-        for i in range(len(res.get("lm_score",[]))):
+        for i in range(len(res.get("lm_score", []))):
             hand = self.extract_hand_data(res, i)
             hands.append(hand)
 
@@ -495,7 +494,6 @@ class HandTracker:
                 self.nb_failed_lm_inferences += res["nb_lm_inf"] - len(hands)
 
         return video_frame, hands, None
-
 
     def exit(self):
         self.device.close()
