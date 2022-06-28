@@ -17,16 +17,19 @@
 
 import os
 import time
-from typing import Callable
-
 import sys
 import traceback
+import numpy as np
 
-from .spudLinkExceptions import SocketBroken
-from .packetTypeEnum import PacketTypeEnum
-from .packetStatusEnum import PacketStatusEnum
-from .packetTool import PacketTool
-from .ethernetLink import EthernetLink
+from typing import Callable, List, Tuple
+
+import mediapipe_utils as mpu
+
+from spudLink.spudLinkExceptions import SocketBroken
+from spudLink.packetTypeEnum import PacketTypeEnum
+from spudLink.packetStatusEnum import PacketStatusEnum
+from spudLink.packetTool import PacketTool
+from spudLink.ethernetLink import EthernetLink
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -113,10 +116,103 @@ class ControllerHandler:
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::prepareHandDataForHost
+    #
+
+    """
+        Sends the hand data to the host controller. This data contains various x/y locations of the key points
+        of the palm and digits as well as information about whether a digit is extended or retracted.
+
+        :param pHands:                      a List of HandRegions which contain data about the hands
+        :type pHands: List[mpu.HandRegion]
+        :param pLandmarkScoreThreshold:     the threshold which the landmark inference score from the AI model must
+                                            exceed in order for the data to be considered valid
+        :param pLandmarkScoreThreshold: float
+        
+        :return: a list of lists of tuples which contain data about the hands such as:
+                 valid data flag, size of hand boundary, (x,y) coordinates for each keypoint of the palm
+        :rtype: List[List[Tuple[int, int]]]
+
+    """
+
+    @staticmethod
+    def prepareHandDataForHost(pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float)\
+            -> List[List[Tuple[int, int]]]:
+
+        handsData: List[List[Tuple[int, int]]] = []
+
+        for hand in pHands:
+
+            handData: List[Tuple[int, int]] = []
+
+            # first tuple in the series for a hand:
+            # (0, 0) -> data invalid due to low inference score
+            # (1, 'width of squared hand outline') -> data valid due to adequate inference score
+
+            # the 'width of squared hand outline' value can be used to scale the size of the drawing features, such
+            # as line thicknesses and circle diameters
+
+            # noinspection PyUnresolvedReferences
+            if hand.lm_score <= pLandmarkScoreThreshold:
+                handData.append((0, 0))
+            else:
+                # noinspection PyUnresolvedReferences
+                handData.append((1, round(hand.rect_w_a)))
+
+            # (info_ref_x, info_ref_y): coords in the image of a reference point used to position labels around the
+            # hand such as score, handedness, etc.
+
+            # noinspection PyUnresolvedReferences
+            labels_ref_x = hand.landmarks[0, 0]
+            # noinspection PyUnresolvedReferences
+            labels_ref_y = np.max(hand.landmarks[:, 1])
+
+            handData.append((labels_ref_x, labels_ref_y))
+
+            # noinspection PyUnresolvedReferences
+            for x, y in hand.landmarks[:, :2]:
+                handData.append((x, y))
+
+            handsData.append(handData)
+
+            return handsData
+
+    # end of ControllerHandler::prepareHandDataForHost
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::sendHandDataToHost
+    #
+
+    """
+        Sends the hand data to the host controller. This data contains various x/y locations of the key points
+        of the palm and digits as well as information about whether a digit is extended or retracted.
+
+        :param pHands:                      a List of HandRegions which contain data about the hands
+        :type pHands: List[mpu.HandRegion]
+        :param pLandmarkScoreThreshold:     the threshold which the landmark inference score from the AI model must
+                                            exceed in order for the data to be considered valid
+        :param pLandmarkScoreThreshold: float
+        
+        :return: None
+        :rtype: None
+    
+    """
+
+    def sendHandDataToHost(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float):
+
+        handsData: List[List[Tuple[int, int]]] = []
+
+        handsData = self.prepareHandDataForHost(pHands, pLandmarkScoreThreshold)
+
+    # end of ControllerHandler::sendHandDataToHost
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
     # ControllerHandler::doRunTimeTasks
     #
 
-    def doRunTimeTasks(self) -> int:
+    def doRunTimeTasks(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float) -> int:
 
         """
             Handles communications and actions with the remote device. This function should be called often during
@@ -142,7 +238,7 @@ class ControllerHandler:
                 else:
                     return 0
             else:
-                return self.handleCommunications()
+                return self.handleCommunications(pHands, pLandmarkScoreThreshold)
 
         except ConnectionResetError:
 
@@ -162,7 +258,7 @@ class ControllerHandler:
     # ControllerHandler::handleCommunications
     #
 
-    def handleCommunications(self) -> int:
+    def handleCommunications(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float) -> int:
 
         """
             Handles communications with the remote device. This function should be called often during runtime to allow
@@ -179,6 +275,8 @@ class ControllerHandler:
 
         """
 
+        self.sendHandDataToHost(pHands, pLandmarkScoreThreshold)
+
         self.ethernetLink.doRunTimeTasks()
 
         packetReady: bool = self.packetTool.checkForPacketReady()
@@ -186,7 +284,7 @@ class ControllerHandler:
         if packetReady:
             return self.handlePacket()
 
-        self.pktRcvCount = self.pktRcvCount + 1
+        self.pktRcvCount += 1
 
         return 0
 
@@ -423,8 +521,8 @@ class ControllerHandler:
         idx = 0
         for c in msgBytes:
             if idx > 0:
-                cheChecksum = cheChecksum + int(c)
-            idx = idx + 1
+                cheChecksum += int(c)
+            idx += 1
         cheChecksum = 0xff - (cheChecksum & 0xff)
         return cheChecksum
 
