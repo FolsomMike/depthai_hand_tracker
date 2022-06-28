@@ -4,6 +4,101 @@
 from HandTrackerRenderer import HandTrackerRenderer
 import argparse
 
+from typing import Final
+
+from spudLink.deviceIdentifierEnum import DeviceIdentifierEnum
+
+from controllerHandler import ControllerHandler
+
+# simple version string
+g_version = "MKS0625212331"
+
+# --------------------------------------------------------------------------------------------------
+# ::prepareForProgramShutdown
+#
+# Prepares for the program to be shut down by closing ports and releasing resources.
+#
+
+
+def prepareForProgramShutdown():
+
+    controllerHandler.disconnect()
+    # logAlways("Host controller ethernet port closed...")
+
+# end of ::prepareForProgramShutdown
+# --------------------------------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------------------------------------
+# ::setupControllerHandler
+#
+
+
+def setupControllerHandler() -> ControllerHandler:
+    """
+        Creates and prepares the ControllerHandler object for use. This object handles communications with the host
+        controller device.
+
+        :return: a reference to the ControllerHandler object
+        :rtype: ControllerHandler
+    """
+
+    REMOTE_DEVICE_ADDRESS: Final[int] = DeviceIdentifierEnum.HEAD_PI.value
+    THIS_DEVICE_ADDRESS: Final[int] = DeviceIdentifierEnum.OAKDLITE_CONTROLLER.value
+    REMOTE_DESCRIPTIVE_NAME: Final[str] = "Spud Head Pi"
+    handler = ControllerHandler(THIS_DEVICE_ADDRESS, REMOTE_DEVICE_ADDRESS, REMOTE_DESCRIPTIVE_NAME,
+                                prepareForProgramShutdown)
+
+    return handler
+
+# end of ::setupControllerHandler
+# ----------------------------------------------------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------------------------------------
+# ::doRunTimeTasks
+#
+
+
+def doRunTimeTasks(pControllerHandler: ControllerHandler):
+
+    """
+        Performs all run time tasks.
+
+        :return: 0 on success, -1 on error
+        :rtype: int
+    """
+
+    while True:
+
+        # Run hand tracker on next frame
+        # 'bag' contains some information related to the frame
+        # and not related to a particular hand like body keypoints in Body Pre Focusing mode
+        # Currently 'bag' contains meaningful information only when Body Pre Focusing is used
+
+        frame, hands, bag = tracker.next_frame()
+
+        if frame is None:
+            break
+
+        # Draw hands - MKS ~ this returned an unused frame object in the original code
+        renderer.draw(frame, hands, bag)
+
+        status = pControllerHandler.doRunTimeTasks(hands, tracker.lm_score_thresh)
+        if status < 0:
+            return status
+
+        key = renderer.waitKey()
+
+        if key == 27 or key == ord('q'):
+            return 0
+
+# end of ::doRunTimeTasks
+# ----------------------------------------------------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------------------------------------
+# ::__main__
+#
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument('-e', '--edge', action="store_true",
                     help="Use Edge mode (postprocessing runs on the device)")
@@ -81,25 +176,15 @@ renderer = HandTrackerRenderer(
         tracker=tracker,
         output=args.output)
 
-while True:
-    # Run hand tracker on next frame
-    # 'bag' contains some information related to the frame 
-    # and not related to a particular hand like body keypoints in Body Pre Focusing mode
-    # Currently 'bag' contains meaningful information only when Body Pre Focusing is used
+controllerHandler: ControllerHandler = setupControllerHandler()
 
-    frame, hands, bag = tracker.next_frame()
-
-    if frame is None:
-        break
-
-    # Draw hands - MKS ~ this returned an unused frame object in the original code
-    renderer.draw(frame, hands, bag)
-
-    key = renderer.waitKey()
-
-    if key == 27 or key == ord('q'):
-        break
+doRunTimeTasks(controllerHandler)
 
 renderer.exit()
 
 tracker.exit()
+
+controllerHandler.disconnect()
+
+# end of ::__main__
+# ----------------------------------------------------------------------------------------------------------------------
