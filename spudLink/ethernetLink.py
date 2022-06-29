@@ -245,13 +245,15 @@ class EthernetLink:
         self.connected = False
 
         try:
-            self.clientSocket.shutdown(socket.SHUT_RDWR)
+            if self.clientSocket is not None:
+                self.clientSocket.shutdown(socket.SHUT_RDWR)
         except OSError:
             print("OSError on socket shutdown...will attempt to close anyway...")
             print("  this is usually OSError: [Errno 107] Transport endpoint is not connected...")
             print("***************************************************************************************")
         try:
-            self.clientSocket.close()
+            if self.clientSocket is not None:
+                self.clientSocket.close()
         except OSError:
             raise SocketBroken("Error 252: Ethernet Socket Connection Broken!")
 
