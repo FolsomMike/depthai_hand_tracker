@@ -12,7 +12,7 @@
 #
 # ----------------------------------------------------------------------------------------------------------------------
 
-from typing import Final
+from typing import Final, List, Tuple
 import array as arr
 import socket
 
@@ -245,7 +245,7 @@ class PacketTool:
         i: int = 0
         while i < self.numDataBytesPlusChecksumByte:
             self.pktChecksum += self.inBuffer[i]
-            i = i + 1
+            i += 1
 
         if self.pktChecksum & 0xff != 0:
             return False
@@ -348,7 +348,7 @@ class PacketTool:
             Increments resyncCount.
         """
 
-        self.resyncCount = self.resyncCount + 1
+        self.resyncCount += 1
 
         while self.byteIn.available() > 0:
             if self.peekForValue(0xaa):
@@ -399,6 +399,10 @@ class PacketTool:
 
             0xaa, 0x55, <dest device identifier>, <this device identifier>, <packet type>,
                              <number of data bytes in packet (MSB)> <number of data bytes in packet (LSB)>
+
+            If the number of data bytes is unknown when this method is called, pNumDataBytes can be set to any
+            number and the client code can later invoke setPacketNumDataBytes method when the value is known but
+            before the checksum is calculated.
 
             The number of data bytes excludes this header and the checksum. Example full packet:
 
@@ -458,6 +462,75 @@ class PacketTool:
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
+    # PacketTool::calculateChecksumAndStoreInBuffer
+    #
+
+    def calculateChecksumAndStoreInBuffer(self, pLastIndex: int) -> int:
+
+        """
+            Calculates the checksum for all bytes in self.outBuffer from index 0 up to but excluding index pLastIndex.
+            The checksum is then stored in the buffer at pLastIndex.
+
+            Returns pLastIndex + 1, which is the number of bytes in the packet including the header, data bytes, and
+            checksum.
+
+        :param pLastIndex:	the index position immediately after the checksum - this is also the packet size in bytes
+        :type pLastIndex:   int
+
+        """
+
+        checksum: int = 0
+
+        x: int = pLastIndex
+
+        j: int = 0
+        while j < x:
+            checksum += self.outBuffer[j]
+            j += 1
+
+        # calculate checksum and put at end of buffer
+
+        self.outBuffer[x] = 0x100 - (checksum & 0xff)
+        x += 1
+
+        return pLastIndex + 1
+
+    # end of PacketTool::calculateChecksumAndStoreInBuffer
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
+    # PacketTool::setPacketNumDataBytes
+    #
+
+    def setPacketNumDataBytes(self, pNumDataBytes: int):
+
+        """
+            Stores 16 least significant bits of pNumDataBytes in outBuffer at the proper location in a header for
+            the number-of-data-bytes value.
+
+            The integer is stored using Big Endian order (MSB first).
+
+            If the number of data bytes is unknown when prepareHeader method is called, pNumDataBytes can be set to any
+            number for that call and the client code can later invoke this method when the value is known but
+            before the checksum is calculated.
+
+        :param pNumDataBytes:	the number of data bytes that will later be added to the packet by client code
+        :type pNumDataBytes:    int
+
+        """
+
+        x: int = 5
+
+        self.outBuffer[x] = ((pNumDataBytes >> 8) & 0xff)
+        x += 1
+
+        self.outBuffer[x] = (pNumDataBytes & 0xff)
+        x += 1
+
+    # end of PacketTool::setPacketNumDataBytes
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
     # PacketTool::sendOutBuffer
     #
 
@@ -501,7 +574,7 @@ class PacketTool:
             checksum. A null terminator (0x00) will be added to the end of the string.
 
             If the string plus a null terminator along with the header and checksum will not fit into the output
-            buffer, the string will be terminated as required
+            buffer, the string will be truncated as required
 
             :param pDestAddress: the address of the remote device
             :type pDestAddress:  int
@@ -538,20 +611,78 @@ class PacketTool:
             self.outBuffer[x] = 0
             x += 1
 
-        checksum: int = 0
-
-        j: int = 0
-        while j < x:
-            checksum += self.outBuffer[j]
-            j += 1
-
-        # calculate checksum and put at end of buffer
-        self.outBuffer[x] = 0x100 - (checksum & 0xff)
-        x += 1
+        x = self.calculateChecksumAndStoreInBuffer(x)
 
         return self.sendOutBuffer(x)
 
     # end of PacketTool::sendString
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
+    # PacketTool::sendSignedShortIntsFromListOfTuples
+    #
+
+    def sendSignedShortIntsFromListOfTuples(self, pDestAddress: int, pPacketType: PacketTypeEnum,
+                                            pData: List[Tuple[int, ...]]) -> bool:
+
+        """
+            Sends a series of signed short ints (16 bits sent as 2 bytes each) to the remote device, prepending a
+            valid header and appending the appropriate checksum.
+
+            The short ints will be read from a List of Tuples. The List can contain unlimited Tuples and each Tuple
+            can contain unlimited ints. Only the two least significant bytes of each Python int will be sent.
+
+            The values are sent Big Endian.
+
+            If the byte series along with the header and checksum will not fit into the output buffer, the series
+            will be truncated as required
+
+            :param pDestAddress: the address of the remote device
+            :type pDestAddress:  int
+            :param pPacketType: the packet type code
+            :type pPacketType:  PacketTypeEnum
+            :param pData:       the List of Tuples containing ints of which the two least significant bytes of each
+                                are to be sent
+            :type pData:        List[Tuple[int]]
+            :return:            true if no error, false on error
+            :rtype:             bool
+
+            :raises: SocketBroken:  if the socket is closed or becomes inoperable
+
+         """
+
+        numBytes: int = 1
+
+        # actual number of data bytes is unknown, so any value in numBytes works for now - will be updated later
+
+        x: int = self.prepareHeader(pDestAddress, pPacketType, numBytes)
+
+        numDataBytes: int = 0
+
+        for aTuple in pData:
+            for anInt in aTuple:
+
+                self.outBuffer[x] = (anInt >> 8) & 0xff
+                x += 1
+                numDataBytes += 1
+
+                if x == self.OUT_BUFFER_SIZE - 1:
+                    break
+
+                self.outBuffer[x] = anInt & 0xff
+                x += 1
+                numDataBytes += 1
+
+                if x == self.OUT_BUFFER_SIZE - 1:
+                    break
+
+        self.setPacketNumDataBytes(numDataBytes)
+
+        x = self.calculateChecksumAndStoreInBuffer(x)
+
+        return self.sendOutBuffer(x)
+
+    # end of PacketTool::sendSignedShortIntsFromListOfTuples
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
