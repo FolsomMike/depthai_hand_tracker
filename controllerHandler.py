@@ -118,7 +118,7 @@ class ControllerHandler:
     # ControllerHandler::inferFingerPositions
     #
 
-    def inferFingerPositions(self, pHands: List[mpu.HandRegion]):
+    def inferFingerPositions(self, pHand: mpu.HandRegion):
 
         """
             Uses the x,y positions of the finger/thumb landmarks to determine if each digit is extended or retracted
@@ -142,55 +142,53 @@ class ControllerHandler:
                 -90     extended and rotated  90 degrees CW from straight up
                 -135    extended and rotated 135 degrees CW from straight up
 
-            :param pHands:                      a List of HandRegions which contain data about the hands
-            :type pHands: List[mpu.HandRegion]
+            :param pHand:                      a HandRegion which contains data about a hand
+            :type pHands: mpu.HandRegion
 
         """
 
-        for hand in pHands:
+        # for now, let mediapipe decode the finger positions...only specifies extended or retracted
+        # todo mks ~ need to decode positions ourselves to specify more angles
+        #   note that mediapipe::recognize_gesture does do angle calculations, so can be used for reference
 
-            # for now, let mediapipe decode the finger positions...only specifies extended or retracted
-            # todo mks ~ need to decode positions ourselves to specify more angles
-            #   note that mediapipe::recognize_gesture does do angle calculations, so can be used for reference
+        mpu.recognize_gesture(pHand)     # todo mks ~ replace this with our own code!
 
-            mpu.recognize_gesture(hand)     # todo mks ~ replace this with our own code!
+        # translate mediapipe codes to digit pointing angles
 
-            # translate mediapipe codes to digit pointing angles
+        if pHand.thumb_state == 0:
+            pHand.thumb_state = self.DIGIT_RETRACTED
+        elif pHand.thumb_state == 1:
+            pHand.thumb_state = 90   # todo mks ~ will be 90 or -90
+        else:
+            pHand.thumb_state = self.UNKNOWN_DIGIT_POSITION
 
-            if hand.thumb_state == 0:
-                hand.thumb_state = self.DIGIT_RETRACTED
-            elif hand.thumb_state == 1:
-                hand.thumb_state = 90   # todo mks ~ will be 90 or -90
-            else:
-                hand.thumb_state = self.UNKNOWN_DIGIT_POSITION
+        if pHand.index_state == 0:
+            pHand.index_state = self.DIGIT_RETRACTED
+        elif pHand.index_state == 1:
+            pHand.index_state = 0
+        else:
+            pHand.index_state = self.UNKNOWN_DIGIT_POSITION
 
-            if hand.index_state == 0:
-                hand.index_state = self.DIGIT_RETRACTED
-            elif hand.index_state == 1:
-                hand.index_state = 0
-            else:
-                hand.index_state = self.UNKNOWN_DIGIT_POSITION
+        if pHand.middle_state == 0:
+            pHand.middle_state = self.DIGIT_RETRACTED
+        elif pHand.middle_state == 1:
+            pHand.middle_state = 0
+        else:
+            pHand.middle_state = self.UNKNOWN_DIGIT_POSITION
 
-            if hand.middle_state == 0:
-                hand.middle_state = self.DIGIT_RETRACTED
-            elif hand.middle_state == 1:
-                hand.middle_state = 0
-            else:
-                hand.middle_state = self.UNKNOWN_DIGIT_POSITION
+        if pHand.ring_state == 0:
+            pHand.ring_state = self.DIGIT_RETRACTED
+        elif pHand.ring_state == 1:
+            pHand.ring_state = 0
+        else:
+            pHand.ring_state = self.UNKNOWN_DIGIT_POSITION
 
-            if hand.ring_state == 0:
-                hand.ring_state = self.DIGIT_RETRACTED
-            elif hand.ring_state == 1:
-                hand.ring_state = 0
-            else:
-                hand.ring_state = self.UNKNOWN_DIGIT_POSITION
-
-            if hand.little_state == 0:
-                hand.little_state = self.DIGIT_RETRACTED
-            elif hand.little_state == 1:
-                hand.little_state = 0
-            else:
-                hand.little_state = self.UNKNOWN_DIGIT_POSITION
+        if pHand.little_state == 0:
+            pHand.little_state = self.DIGIT_RETRACTED
+        elif pHand.little_state == 1:
+            pHand.little_state = 0
+        else:
+            pHand.little_state = self.UNKNOWN_DIGIT_POSITION
 
     # end of ControllerHandler::inferFingerPositions
     # --------------------------------------------------------------------------------------------------
@@ -295,8 +293,7 @@ class ControllerHandler:
 
     # noinspection PyUnresolvedReferences
 
-    @staticmethod
-    def prepareHandDataForHost(pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float)\
+    def prepareHandDataForHost(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float)\
             -> List[Tuple[int, int]]:
 
         handsData: List[Tuple[int, int]] = []
@@ -319,8 +316,8 @@ class ControllerHandler:
 
             # add the digit extended/retracted states to the list
 
-            # infer the finger/thumb states - extended pointing angle/retracted/unknown
-            mpu.recognize_gesture(hand)
+            # infer the state of the digits for use in inferring gestures
+            self.inferFingerPositions(hand)
 
             handsData.append((hand.thumb_state, hand.index_state))
             handsData.append((hand.middle_state, hand.ring_state))
