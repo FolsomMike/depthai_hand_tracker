@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import cv2
 
 from HandTrackerRenderer import HandTrackerRenderer
 import argparse
@@ -79,14 +80,17 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
         if frame is None:
             break
 
-        # Draw hands - MKS ~ this returned an unused frame object in the original code
-        renderer.draw(frame, hands, bag)
-
         status = pControllerHandler.doRunTimeTasks(hands, tracker.lm_score_thresh)
         if status < 0:
             return status
 
-        key = renderer.waitKey()
+        # in server mode, nothing is displayed by this program but data is sent to host controller
+
+        if args.server_mode:
+            key = cv2.waitKey(1)
+        else:
+            renderer.draw(frame, hands, bag)
+            key = renderer.waitKey()
 
         if key == 27 or key == ord('q'):
             return 0
@@ -103,6 +107,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-e', '--edge', action="store_true",
                     help="Use Edge mode (postprocessing runs on the device)")
 parser_tracker = parser.add_argument_group("Tracker arguments")
+
+parser_tracker.add_argument('--server_mode', action="store_true",
+                            help="Nothing is displayed by this program but data is still sent to host.")
+
 parser_tracker.add_argument('-i', '--input', type=str,
                             help="Path to video or image file to use as input (if not specified, use OAK color camera)")
 parser_tracker.add_argument("--pd_model", type=str,
