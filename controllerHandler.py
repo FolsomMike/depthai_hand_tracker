@@ -200,8 +200,10 @@ class ControllerHandler:
     #
 
     """
-        Sends the hand data to the host controller. This data contains various x/y locations of the key points
+        Prepares data for all hands for sending to the host. This data contains various x/y locations of the key points
         of the palm and digits as well as information about whether a digit is extended or retracted.
+        
+        Each x,y point is contained in a Tuple. This method returns a List of Tuples of all the data from all hands.
         
         The data block in the packet to the host is a series of signed short ints (16 bits) as follows:
         
@@ -285,9 +287,9 @@ class ControllerHandler:
                                             exceed in order for the data to be considered valid
         :param pLandmarkScoreThreshold: float
         
-        :return: a list of lists of tuples which contain data about the hands such as:
+        :return: a list of Tuples which contain data about all hands such as:
                  valid data flag, size of hand boundary, (x,y) coordinates for each keypoint of the palm
-        :rtype: List[List[Tuple[int, int]]]
+        :rtype: List[Tuple[int, int]]
 
     """
 
@@ -295,13 +297,11 @@ class ControllerHandler:
 
     @staticmethod
     def prepareHandDataForHost(pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float)\
-            -> List[List[Tuple[int, int]]]:
+            -> List[Tuple[int, int]]:
 
-        handsData: List[List[Tuple[int, int]]] = []
+        handsData: List[Tuple[int, int]] = []
 
         for hand in pHands:
-
-            handData: List[Tuple[int, int]] = []
 
             # first tuple in the series for a hand:
             # (0, 0) -> data invalid due to low inference score
@@ -312,19 +312,19 @@ class ControllerHandler:
 
             # noinspection PyUnresolvedReferences
             if hand.lm_score <= pLandmarkScoreThreshold:
-                handData.append((0, 0))
+                handsData.append((0, 0))
             else:
                 # noinspection PyUnresolvedReferences
-                handData.append((1, round(hand.rect_w_a)))
+                handsData.append((1, round(hand.rect_w_a)))
 
             # add the digit extended/retracted states to the list
 
             # infer the finger/thumb states - extended pointing angle/retracted/unknown
             mpu.recognize_gesture(hand)
 
-            handData.append((hand.thumb_state, hand.index_state))
-            handData.append((hand.middle_state, hand.ring_state))
-            handData.append((hand.little_state, 0))
+            handsData.append((hand.thumb_state, hand.index_state))
+            handsData.append((hand.middle_state, hand.ring_state))
+            handsData.append((hand.little_state, 0))
 
             # add the x,y coordinate used as an anchor point for any labels
 
@@ -336,7 +336,7 @@ class ControllerHandler:
             # noinspection PyUnresolvedReferences
             labels_ref_y = np.max(hand.landmarks[:, 1])
 
-            handData.append((labels_ref_x, labels_ref_y))
+            handsData.append((labels_ref_x, labels_ref_y))
 
             # add the x,y coordinates for each landmark key point
 
@@ -345,11 +345,7 @@ class ControllerHandler:
 
             # noinspection PyUnresolvedReferences
             for x, y in hand.landmarks[:, :2]:
-                handData.append((x, y))
-
-            # add each hand to the list
-
-            handsData.append(handData)
+                handsData.append((x, y))
 
         return handsData
 
@@ -390,19 +386,15 @@ class ControllerHandler:
 
         self.handDataSendTimerEnd = nowTime + self.HAND_DATA_SEND_TIMER_PERIOD
 
-        handsData: List[List[Tuple[int, int]]]
+        handsData: List[Tuple[int, int]]
 
         handsData = self.prepareHandDataForHost(pHands, pLandmarkScoreThreshold)
 
         # debugMKS = [(1, 2), (3, 4)] remove this
 
-        handData: List[Tuple[int, int]] = []
-
-        for handData in handsData:
-
-            self.packetTool.sendSignedShortIntsFromListOfTuples(
-                self.remoteDeviceIdentifier,
-                PacketTypeEnum.HAND_GESTURE_DATA, handData)
+        self.packetTool.sendSignedShortIntsFromListOfTuples(
+            self.remoteDeviceIdentifier,
+            PacketTypeEnum.HAND_GESTURE_DATA, handsData)
 
         print("transmit hand data")   # debug mks
 
