@@ -21,7 +21,7 @@ import sys
 import traceback
 import numpy as np
 
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Final
 
 import mediapipe_utils as mpu
 
@@ -73,6 +73,16 @@ class ControllerHandler:
 
         self.waitingForACKPkt: bool = False
 
+        self.handDataSendTimerEnd: float = 0
+
+        self.HAND_DATA_SEND_TIMER_PERIOD: Final[float] = 0.3
+
+        self.MAX_SHORT_INT: Final[int] = 32767
+
+        self.UNKNOWN_DIGIT_POSITION: Final[int] = self.MAX_SHORT_INT
+
+        self.DIGIT_RETRACTED: Final[int] = self.MAX_SHORT_INT - 1
+
     # end of ControllerHandler::__init__
     # --------------------------------------------------------------------------------------------------
 
@@ -105,14 +115,84 @@ class ControllerHandler:
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
-    # ControllerHandler::getWaitingForACKPkt
+    # ControllerHandler::inferFingerPositions
     #
 
-    def getWaitingForACKPkt(self):
+    def inferFingerPositions(self, pHands: List[mpu.HandRegion]):
 
-        return self.waitingForACKPkt
+        """
+            Uses the x,y positions of the finger/thumb landmarks to determine if each digit is extended or retracted
+            and the angle from tip-to-base of each extended digit.
 
-    # end of ControllerHandler::getWaitingForACKPkt
+            Note that the normally extended thumb will be inferred at 90 or -90 degrees (pointing sideways).
+
+            All digits on all hands in List pHands are decoded.
+
+            The state of the digits are encoded as follows:
+
+                32767   unknown state ~ cannot be inferred
+                32766   retracted
+                0       extended 0 degrees straight up
+                45      extended and rotated  45 degrees CCW from straight up
+                90      extended and rotated  90 degrees CCW from straight up
+                135     extended and rotated 135 degrees CCW from straight up
+                180     extended and rotated 180 degrees CCW from straight up - pointing straight down
+
+                -45     extended and rotated  45 degrees CW from straight up
+                -90     extended and rotated  90 degrees CW from straight up
+                -135    extended and rotated 135 degrees CW from straight up
+
+            :param pHands:                      a List of HandRegions which contain data about the hands
+            :type pHands: List[mpu.HandRegion]
+
+        """
+
+        for hand in pHands:
+
+            # for now, let mediapipe decode the finger positions...only specifies extended or retracted
+            # todo mks ~ need to decode positions ourselves to specify more angles
+            #   note that mediapipe::recognize_gesture does do angle calculations, so can be used for reference
+
+            mpu.recognize_gesture(hand)     # todo mks ~ replace this with our own code!
+
+            # translate mediapipe codes to digit pointing angles
+
+            if hand.thumb_state == 0:
+                hand.thumb_state = self.DIGIT_RETRACTED
+            elif hand.thumb_state == 1:
+                hand.thumb_state = 90   # todo mks ~ will be 90 or -90
+            else:
+                hand.thumb_state = self.UNKNOWN_DIGIT_POSITION
+
+            if hand.index_state == 0:
+                hand.index_state = self.DIGIT_RETRACTED
+            elif hand.index_state == 1:
+                hand.index_state = 0
+            else:
+                hand.index_state = self.UNKNOWN_DIGIT_POSITION
+
+            if hand.middle_state == 0:
+                hand.middle_state = self.DIGIT_RETRACTED
+            elif hand.middle_state == 1:
+                hand.middle_state = 0
+            else:
+                hand.middle_state = self.UNKNOWN_DIGIT_POSITION
+
+            if hand.ring_state == 0:
+                hand.ring_state = self.DIGIT_RETRACTED
+            elif hand.ring_state == 1:
+                hand.ring_state = 0
+            else:
+                hand.ring_state = self.UNKNOWN_DIGIT_POSITION
+
+            if hand.little_state == 0:
+                hand.little_state = self.DIGIT_RETRACTED
+            elif hand.little_state == 1:
+                hand.little_state = 0
+            else:
+                hand.little_state = self.UNKNOWN_DIGIT_POSITION
+
+    # end of ControllerHandler::inferFingerPositions
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
@@ -122,6 +202,82 @@ class ControllerHandler:
     """
         Sends the hand data to the host controller. This data contains various x/y locations of the key points
         of the palm and digits as well as information about whether a digit is extended or retracted.
+        
+        The data block in the packet to the host is a series of signed short ints (16 bits) as follows:
+        
+        byte        name            purpose
+        
+            (first hand starts at byte 0)
+         
+              0:1    valid data      0 if data is invalid, 1 if data is valid
+              2:3    hand width      0 if data is invalid, the width of the bounding square around the hand if valid
+            
+              4:5    thumb state     unknown/retracted/extended pointing angle state of the thumb      
+              6:7    index state     unknown/retracted/extended pointing angle state of the index finger
+              8:9    middle state    unknown/retracted/extended pointing angle state of the middle finger        
+             10:11   ring state      unknown/retracted/extended pointing angle state of the ring finger
+             12:13   little state    unknown/retracted/extended pointing angle state of the little finger
+             14:15   unused          unused filler value to fill out two int Tuple
+            
+             16:17   x label anchor  x coordinate anchor point useful for positioning labels drawn around the hand
+             18:19   y label anchor  y coordinate anchor point useful for positioning labels drawn around the hand
+            
+             20:21   x of palm base  x coordinate of the base of the palm near to the wrist   
+             22:23   y of palm base  y coordinate of the base of the palm near to the wrist
+            
+             24:25   x0 of thumb     x coordinate of point 0 of the thumb (base)
+             26:27   y0 of thumb     y coordinate of point 0 of the thumb (base)
+             28:29   x1 of thumb     x coordinate of point 1 of the thumb
+             30:31   y1 of thumb     y coordinate of point 1 of the thumb
+             32:33   x2 of thumb     x coordinate of point 2 of the thumb
+             34:35   y2 of thumb     y coordinate of point 2 of the thumb
+             36:37   x3 of thumb     x coordinate of point 3 of the thumb (tip)
+             38:39   y3 of thumb     y coordinate of point 3 of the thumb (tip)
+
+             40:41   x0 of index     x coordinate of point 0 of the index (base)
+             42:43   y0 of index     y coordinate of point 0 of the index (base)
+             44:45   x1 of index     x coordinate of point 1 of the index
+             46:47   y1 of index     y coordinate of point 1 of the index
+             48:49   x2 of index     x coordinate of point 2 of the index
+             50:51   y2 of index     y coordinate of point 2 of the index
+             52:53   x3 of index     x coordinate of point 3 of the index (tip)
+             54:55   y3 of index     y coordinate of point 3 of the index (tip)
+
+             56:57   x0 of middle    x coordinate of point 0 of the middle (base)
+             58:59   y0 of middle    y coordinate of point 0 of the middle (base)
+             60:61   x1 of middle    x coordinate of point 1 of the middle
+             62:63   y1 of middle    y coordinate of point 1 of the middle
+             64:65   x2 of middle    x coordinate of point 2 of the middle
+             66:67   y2 of middle    y coordinate of point 2 of the middle
+             68:69   x3 of middle    x coordinate of point 3 of the middle (tip)
+             70:71   y3 of middle    y coordinate of point 3 of the middle (tip)
+
+             72:73   x0 of ring      x coordinate of point 0 of the ring (base)
+             74:75   y0 of ring      y coordinate of point 0 of the ring (base)
+             76:77   x1 of ring      x coordinate of point 1 of the ring
+             78:79   y1 of ring      y coordinate of point 1 of the ring
+             80:81   x2 of ring      x coordinate of point 2 of the ring
+             82:83   y2 of ring      y coordinate of point 2 of the ring
+             84:85   x3 of ring      x coordinate of point 3 of the ring (tip)
+             86:87   y3 of ring      y coordinate of point 3 of the ring (tip)
+
+             88:89   x0 of little    x coordinate of point 0 of the little (base)
+             90:91   y0 of little    y coordinate of point 0 of the little (base)
+             92:93   x1 of little    x coordinate of point 1 of the little
+             94:95   y1 of little    y coordinate of point 1 of the little
+             96:97   x2 of little    x coordinate of point 2 of the little
+             98:99   y2 of little    y coordinate of point 2 of the little
+            100:101  x3 of little    x coordinate of point 3 of the little (tip)
+            102:103  y3 of little    y coordinate of point 3 of the little (tip)
+
+            (next hand starts at byte 104)
+            
+            104:105  valid data      0 if data is invalid, 1 if data is valid
+            106:107  hand width      0 if data is invalid, the width of the bounding square around the hand if valid
+            ...
+            ...                 { duplicate of first hand...refer to above }
+            ...
+
 
         :param pHands:                      a List of HandRegions which contain data about the hands
         :type pHands: List[mpu.HandRegion]
@@ -134,6 +290,8 @@ class ControllerHandler:
         :rtype: List[List[Tuple[int, int]]]
 
     """
+
+    # noinspection PyUnresolvedReferences
 
     @staticmethod
     def prepareHandDataForHost(pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float)\
@@ -159,6 +317,17 @@ class ControllerHandler:
                 # noinspection PyUnresolvedReferences
                 handData.append((1, round(hand.rect_w_a)))
 
+            # add the digit extended/retracted states to the list
+
+            # infer the finger/thumb states - extended pointing angle/retracted/unknown
+            mpu.recognize_gesture(hand)
+
+            handData.append((hand.thumb_state, hand.index_state))
+            handData.append((hand.middle_state, hand.ring_state))
+            handData.append((hand.little_state, 0))
+
+            # add the x,y coordinate used as an anchor point for any labels
+
             # (info_ref_x, info_ref_y): coords in the image of a reference point used to position labels around the
             # hand such as score, handedness, etc.
 
@@ -169,13 +338,20 @@ class ControllerHandler:
 
             handData.append((labels_ref_x, labels_ref_y))
 
+            # add the x,y coordinates for each landmark key point
+
+            # hand.landmarks[0][0] = 10  # debug mks
+            # hand.landmarks[0][1] = 100  # debug mks
+
             # noinspection PyUnresolvedReferences
             for x, y in hand.landmarks[:, :2]:
                 handData.append((x, y))
 
+            # add each hand to the list
+
             handsData.append(handData)
 
-            return handsData
+        return handsData
 
     # end of ControllerHandler::prepareHandDataForHost
     # --------------------------------------------------------------------------------------------------
@@ -187,23 +363,48 @@ class ControllerHandler:
     """
         Sends the hand data to the host controller. This data contains various x/y locations of the key points
         of the palm and digits as well as information about whether a digit is extended or retracted.
+        
+        If pHands is empty, no data will be sent. If it contains info for one hand, data for that one hand will be
+        sent. For two hands, data for both will be sent. The host can determine the number of hands by the number of
+        data bytes in the packet.
+        
+        The handedness is not specified. If both hands are on the screen, the first hand sent will be the left one
+        on the camera image.
+        
+        Will only send data if HAND_DATA_SEND_TIMER_PERIOD number of seconds have passed since the last transmission.
 
         :param pHands:                      a List of HandRegions which contain data about the hands
         :type pHands: List[mpu.HandRegion]
         :param pLandmarkScoreThreshold:     the threshold which the landmark inference score from the AI model must
                                             exceed in order for the data to be considered valid
         :param pLandmarkScoreThreshold: float
-        
-        :return: None
-        :rtype: None
     
     """
 
     def sendHandDataToHost(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float):
 
-        handsData: List[List[Tuple[int, int]]] = []
+        nowTime: float = time.perf_counter()
+
+        if nowTime < self.handDataSendTimerEnd:
+            return
+
+        self.handDataSendTimerEnd = nowTime + self.HAND_DATA_SEND_TIMER_PERIOD
+
+        handsData: List[List[Tuple[int, int]]]
 
         handsData = self.prepareHandDataForHost(pHands, pLandmarkScoreThreshold)
+
+        # debugMKS = [(1, 2), (3, 4)] remove this
+
+        handData: List[Tuple[int, int]] = []
+
+        for handData in handsData:
+
+            self.packetTool.sendSignedShortIntsFromListOfTuples(
+                self.remoteDeviceIdentifier,
+                PacketTypeEnum.HAND_GESTURE_DATA, handData)
+
+        print("transmit hand data")   # debug mks
 
     # end of ControllerHandler::sendHandDataToHost
     # --------------------------------------------------------------------------------------------------
@@ -243,6 +444,12 @@ class ControllerHandler:
         except ConnectionResetError:
 
             self.logExceptionInformation("Connection Reset Error - Host program probably terminated improperly.")
+            self.disconnect()
+            return 0
+
+        except ConnectionAbortedError:
+
+            self.logExceptionInformation("Connection Aborted Error - Host program probably terminated improperly.")
             self.disconnect()
             return 0
 
@@ -348,78 +555,6 @@ class ControllerHandler:
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
-    # ControllerHandler::handleMoveByDistanceAndTimePacket
-    #
-
-    def handleMoveByDistanceAndTimePacket(self) -> int:
-
-        """
-            Handles a MOVE_BY_DISTANCE_AND_TIME packet by moving the robot the specified distance for the specified
-            amount of time in milliseconds, whichever is reached first.
-
-            The speed of each wheel is also parsed from the packet.
-
-            :return: 0 on no packet handled, 1 on packet handled, -1 on error
-            :rtype: int
-        """
-
-        print("Packet received of type: MOVE_BY_DISTANCE_AND_TIME")
-
-        startPosition: int = 0
-        currentPosition: int = 0
-
-        index: int = 0
-
-        pktStatus, index, value = self.packetTool.parseDuplexIntegerFromPacket(index)
-        if pktStatus != PacketStatusEnum.PACKET_VALID:
-            return -1
-        distanceToMove: int = abs(value)
-
-        pktStatus, index, value = self.packetTool.parseDuplexIntegerFromPacket(index)
-        if pktStatus != PacketStatusEnum.PACKET_VALID:
-            return -1
-        timeDurationMS: int = value
-        timeDurationSec: float = timeDurationMS / 1000
-
-        pktStatus, index, value = self.packetTool.parseDuplexIntegerFromPacket(index)
-        if pktStatus != PacketStatusEnum.PACKET_VALID:
-            return -1
-        leftWheelSpeed: int = value
-
-        pktStatus, index, value = self.packetTool.parseDuplexIntegerFromPacket(index)
-        if pktStatus != PacketStatusEnum.PACKET_VALID:
-            return -1
-        rightWheelSpeed: int = value
-
-        timeStart: float = time.perf_counter()
-
-        while True:
-
-            #  print("Time: " + str(time.perf_counter()) + " : " + str(timeStart))  # debug mks
-
-            print(str(leftWheelSpeed) + " : " + str(rightWheelSpeed))  # debug mks
-
-            self.setMotorSpeeds(leftWheelSpeed, rightWheelSpeed)
-
-            if time.perf_counter() - timeStart >= timeDurationSec:
-                break
-
-            if currentPosition - startPosition >= distanceToMove:
-                break
-
-            time.sleep(0.02)
-
-        self.stopMotors()
-
-        # todo mks
-        # send ACK packet
-
-        return 1
-
-    # end of ControllerHandler::handleMoveByDistanceAndTimePacket
-    # --------------------------------------------------------------------------------------------------
-
-    # --------------------------------------------------------------------------------------------------
     # ControllerHandler::handleShutDownOperatingSystem
     #
 
@@ -472,59 +607,6 @@ class ControllerHandler:
 
     # end of ControllerHandler::handleShutDownOperatingSystem
     # --------------------------------------------------------------------------------------------------
-
-    def setMotorSpeeds(self, leftWheelSpeed: int, rightWheelSpeed: int):
-
-        # cmdPacket = self.formMagniSpeedMessage(leftWheelSpeed, rightWheelSpeed)
-
-        pass
-
-    # Since stop is so common we have a function to send all stop to the motors
-
-    def stopMotors(self):
-
-        # cmdPacket = self.formMagniSpeedMessage(0, 0)
-
-        pass
-
-    # Form a bytearray holding a speed message with the left and right speed values
-    # This routine only handles -254 to 255 speeds but that is generally quite alright
-
-    def formMagniSpeedMessage(self, leftSpeed: int, rightSpeed: int):
-
-        # start with  a speed message for zero speed but without checksum
-        speedCmd = [0x7e, 0x3b, 0x2a, 0, 0, 0, 0]
-
-        if rightSpeed < 0:
-            speedCmd[3] = 0xff
-            speedCmd[4] = (0x100 - ((-1 * rightSpeed) & 0xff)) & 0xff
-        else:
-            speedCmd[4] = rightSpeed & 0xff
-
-        if leftSpeed < 0:
-            speedCmd[5] = 0xff
-            speedCmd[6] = (0x100 - ((-1 * leftSpeed) & 0xff)) & 0xff
-        else:
-            speedCmd[6] = leftSpeed & 0xff
-
-        pktChecksum = self.calcPacketChecksum(speedCmd)
-        speedCmd.append(pktChecksum)
-
-        return speedCmd
-
-    # Calculate a packet cheChecksum for the given byte array
-
-    @staticmethod
-    def calcPacketChecksum(msgBytes):
-
-        cheChecksum = 0
-        idx = 0
-        for c in msgBytes:
-            if idx > 0:
-                cheChecksum += int(c)
-            idx += 1
-        cheChecksum = 0xff - (cheChecksum & 0xff)
-        return cheChecksum
 
     # --------------------------------------------------------------------------------------------------
     # ControllerHandler::disconnect
@@ -580,28 +662,3 @@ class ControllerHandler:
 # end of class ControllerHandler
 # ----------------------------------------------------------------------------------------------------------------------
 # ----------------------------------------------------------------------------------------------------------------------
-#
-# //--------------------------------------------------------------------------------------------------
-# // BackpackHandler::logMessageFromPacket
-# //
-# /**
-#  * Logs a message received in a packet from a remote device. The message C-string is
-#  * extracted from PacketTool.pktDataBuffer and converted to a String. The C-string should have
-#  * a null terminator in the packet which is ignored when converting to a string.
-#  *
-#  */
-#
-# public void logMessageFromPacket()
-# {
-#
-# 	int numPktDataBytes = packetTool.getNumPktDataBytes();
-#
-# 	byte[] buf = packetTool.getPktDataBuffer();
-#
-# 	String message = new String(buf, 0, numPktDataBytes-1);
-#
-# 	tsLog.appendLine(message);
-#
-# }//end of BackpackHandler::logMessageFromPacket
-# //--------------------------------------------------------------------------------------------------
-#

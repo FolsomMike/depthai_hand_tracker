@@ -490,7 +490,11 @@ class PacketTool:
 
         # calculate checksum and put at end of buffer
 
-        self.outBuffer[x] = 0x100 - (checksum & 0xff)
+        try:
+            self.outBuffer[x] = 0x100 - (checksum & 0xff)
+        except OverflowError:
+            print("Checksum: ", checksum)
+
         x += 1
 
         return pLastIndex + 1
