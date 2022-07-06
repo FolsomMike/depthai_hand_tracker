@@ -192,10 +192,31 @@ class ControllerHandler:
             Infers the state of each digit based on relative positions of the landmarks of each digit as well as the
             angle of the line between appropriate landmarks.
 
+            Also infers left hand vs right hand based on positions of thumb and little finger. This is only accurate
+            if palms are facing camera. The HandRegion.handedness value is overwritten to signal left/right:
+                0.0 = left, 1.0 = right
+
+            Note that this is method is different than used by mediapipe to set the HandRegion.handedness...they use
+            AI model results to determine left/right - it is a bit less accurate, but works regardless of whether the
+            palm/back of hand is facing the camera.
+
             :param pHand:                      a HandRegion which contains data about a hand
             :type pHand: mpu.HandRegion
 
         """
+
+        # infer left or right hand based on relative positions of the X coordinates of the tips of the thumb and
+        # the little finger (only accurate if palms facing camera) - if thumb is left of little finger on the screen,
+        # it is the left hand, otherwise it is right hand
+        # note that the hands are mirrored on the screen in relation to the person viewing their hands
+
+        #   value [5][0]  is the X coordinate ([0]) of the end of the thumb ([5])
+        #   value [20][0] is the X coordinate ([0]) of the end of the little finger ([20])
+
+        if pHand.norm_landmarks[5][0] < pHand.norm_landmarks[20][0]:
+            pHand.handedness = 0.0
+        else:
+            pHand.handedness = 1.0
 
         # calculate distances and angles for the thumb
 
@@ -454,9 +475,14 @@ class ControllerHandler:
             # infer the state of the digits for use in inferring gestures
             self.inferFingerPositions(hand)
 
+            if hand.handedness == 0.0:
+                whichHand = 0
+            else:
+                whichHand = 1
+
             handsData.append((hand.thumb_state, hand.index_state))
             handsData.append((hand.middle_state, hand.ring_state))
-            handsData.append((hand.little_state, 0))
+            handsData.append((hand.little_state, whichHand))
 
             # add the x,y coordinate used as an anchor point for any labels
 
