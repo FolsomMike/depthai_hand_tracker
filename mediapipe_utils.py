@@ -34,6 +34,7 @@ class HandRegion:
                 or None if no gesture has been recognized
         """
     def __init__(self, pd_score=None, pd_box=None, pd_kps=None):
+        self.norm_landmarks = None
         self.pd_score = pd_score # Palm detection score 
         self.pd_box = pd_box # Palm detection box [x, y, w, h] normalized
         self.pd_kps = pd_kps # Palm detection keypoints
