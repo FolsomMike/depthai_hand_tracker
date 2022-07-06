@@ -20,6 +20,7 @@ import time
 import sys
 import traceback
 import numpy as np
+import numpy.typing as npt
 
 from typing import Callable, List, Tuple, Final
 
@@ -115,6 +116,140 @@ class ControllerHandler:
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::calculateDistance2Points
+    #
+
+    @staticmethod
+    def calculateDistance2Points(pA: npt.NDArray[np.float64], pB: npt.NDArray[np.float64]):
+
+        """
+            Calculates the distance between two points pA and pB in 2D or 3D.
+
+            :param pA:                          the first point
+            :type pA: npt.NDArray[np.float64]
+
+            :param pB:                          the second point
+            :type pB: npt.NDArray[np.float64]
+
+            :return:                            the distance between points pA and pB
+            :rtype: float
+
+        """
+
+        return np.linalg.norm(pA - pB)
+
+    # end of ControllerHandler::calculateDistance2Points
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::calculateAngleFrom3Points
+    #
+
+    @staticmethod
+    def calculateAngleFrom3Points(pA, pB, pC):
+
+        """
+            Calculates the angle formed from three points pA, pB, and pC.
+
+            :param pA:                          the first point
+            :type pA: npt.NDArray[np.float64]
+
+            :param pB:                          the second point
+            :type pB: npt.NDArray[np.float64]
+
+            :param pC:                          the third point
+            :type pC: npt.NDArray[np.float64]
+
+            :return:                            the distance between points pA and pB
+            :rtype: float
+
+            Reference:
+
+            https://stackoverflow.com/questions/35176451/python-code-to-calculate-angle-between-three-point-using-
+            their-3d-coordinates
+
+        """
+
+        # a, b and c : points as np.array([x, y, z])
+
+        ba = pA - pB
+        bc = pC - pB
+        cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+        angle = np.arccos(cosine_angle)
+
+        return np.degrees(angle)
+
+    # end of ControllerHandler::calculateAngleFrom3Points
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::translateLandmarksToFingerPositions
+    #
+
+    def translateLandmarksToFingerPositions(self, pHand: mpu.HandRegion):
+
+        """
+            Infers the state of each digit based on relative positions of the landmarks of each digit as well as the
+            angle of the line between appropriate landmarks.
+
+            :param pHand:                      a HandRegion which contains data about a hand
+            :type pHand: mpu.HandRegion
+
+        """
+
+        # calculate distances and angles for the thumb
+
+        d_3_5 = self.calculateDistance2Points(pHand.norm_landmarks[3], pHand.norm_landmarks[5])
+        d_2_3 = self.calculateDistance2Points(pHand.norm_landmarks[2], pHand.norm_landmarks[3])
+
+        angle0 = \
+            self.calculateAngleFrom3Points(pHand.norm_landmarks[0], pHand.norm_landmarks[1], pHand.norm_landmarks[2])
+        angle1 = \
+            self.calculateAngleFrom3Points(pHand.norm_landmarks[1], pHand.norm_landmarks[2], pHand.norm_landmarks[3])
+        angle2 = \
+            self.calculateAngleFrom3Points(pHand.norm_landmarks[2], pHand.norm_landmarks[3], pHand.norm_landmarks[4])
+
+        pHand.thumb_angle = angle0+angle1+angle2
+
+        if angle0+angle1+angle2 > 460 and d_3_5 / d_2_3 > 1.2:
+            pHand.thumb_state = 1
+        else:
+            pHand.thumb_state = 0
+
+        # infer finger states from relative positions of each digit's landmarks
+
+        if pHand.norm_landmarks[8][1] < pHand.norm_landmarks[7][1] < pHand.norm_landmarks[6][1]:
+            pHand.index_state = 1
+        elif pHand.norm_landmarks[6][1] < pHand.norm_landmarks[8][1]:
+            pHand.index_state = 0
+        else:
+            pHand.index_state = -1
+
+        if pHand.norm_landmarks[12][1] < pHand.norm_landmarks[11][1] < pHand.norm_landmarks[10][1]:
+            pHand.middle_state = 1
+        elif pHand.norm_landmarks[10][1] < pHand.norm_landmarks[12][1]:
+            pHand.middle_state = 0
+        else:
+            pHand.middle_state = -1
+
+        if pHand.norm_landmarks[16][1] < pHand.norm_landmarks[15][1] < pHand.norm_landmarks[14][1]:
+            pHand.ring_state = 1
+        elif pHand.norm_landmarks[14][1] < pHand.norm_landmarks[16][1]:
+            pHand.ring_state = 0
+        else:
+            pHand.ring_state = -1
+
+        if pHand.norm_landmarks[20][1] < pHand.norm_landmarks[19][1] < pHand.norm_landmarks[18][1]:
+            pHand.little_state = 1
+        elif pHand.norm_landmarks[18][1] < pHand.norm_landmarks[20][1]:
+            pHand.little_state = 0
+        else:
+            pHand.little_state = -1
+
+    # end of ControllerHandler::translateLandmarksToFingerPositions
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
     # ControllerHandler::inferFingerPositions
     #
 
@@ -143,15 +278,15 @@ class ControllerHandler:
                 -135    extended and rotated 135 degrees CW from straight up
 
             :param pHand:                      a HandRegion which contains data about a hand
-            :type pHands: mpu.HandRegion
+            :type pHand: mpu.HandRegion
 
         """
 
-        # for now, let mediapipe decode the finger positions...only specifies extended or retracted
+        # decode the finger positions
         # todo mks ~ need to decode positions ourselves to specify more angles
         #   note that mediapipe::recognize_gesture does do angle calculations, so can be used for reference
 
-        mpu.recognize_gesture(pHand)     # todo mks ~ replace this with our own code!
+        self.translateLandmarksToFingerPositions(pHand)
 
         # translate mediapipe codes to digit pointing angles
 
@@ -217,7 +352,7 @@ class ControllerHandler:
               8:9    middle state    unknown/retracted/extended pointing angle state of the middle finger        
              10:11   ring state      unknown/retracted/extended pointing angle state of the ring finger
              12:13   little state    unknown/retracted/extended pointing angle state of the little finger
-             14:15   unused          unused filler value to fill out two int Tuple
+             14:15   which hand      0 for left hand, 1 for right; only works with palms facing camera
             
              16:17   x label anchor  x coordinate anchor point useful for positioning labels drawn around the hand
              18:19   y label anchor  y coordinate anchor point useful for positioning labels drawn around the hand
