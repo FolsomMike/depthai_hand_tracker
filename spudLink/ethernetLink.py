@@ -18,10 +18,10 @@
 #
 # ----------------------------------------------------------------------------------------------------------------------
 
+from typing import Final, List, Tuple, Optional  # also available: Set, Dict, Tuple, Optional
+
 import select
 import socket
-
-from typing import Final, List, Tuple  # also available: Set, Dict, Tuple, Optional
 
 from .spudLinkExceptions import SocketBroken
 from .circularBuffer import CircularBuffer
@@ -58,19 +58,19 @@ class EthernetLink:
 
         self.receiveBuf = CircularBuffer(RECEIVE_BUFFER_SIZE)
 
-        self.clientSocket: socket = None
-        self.clientSocketList: List[socket] = []
+        self.clientSocket: Optional[socket.socket] = None
+        self.clientSocketList: List[socket.socket] = []
 
         # remoteAddress -> (remote Address, remote port)
         self.remoteAddress: Tuple[str, int] = ("", 0)
 
-        # todo mks ~ 4242 should NOT be hardcoded...client code should inject!
+        # todo mks ~ 4243 should NOT be hardcoded...client code should inject!
 
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind(('', 4243))
         self.server_socket.listen(1)
-        self.server_socket_list: List[socket] = [self.server_socket]
+        self.server_socket_list: List[socket.socket] = [self.server_socket]
 
         print("Listening for Ethernet connection request on port 4243.")
 
@@ -287,7 +287,7 @@ class EthernetLink:
     # EthernetLink::getOutputStream
     #
 
-    def getOutputStream(self) -> socket:
+    def getOutputStream(self) -> socket.socket:
 
         """
             Returns a socket for the remote device. For Python, a socket is returned rather than a Stream as might be
@@ -296,6 +296,8 @@ class EthernetLink:
             :return: reference to a socket for the remote device
             :rtype: socket
         """
+
+        assert self.clientSocket is not None  # see note in this file 'Note regarding Assert' for details
 
         return self.clientSocket
 

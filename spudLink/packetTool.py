@@ -12,7 +12,7 @@
 #
 # ----------------------------------------------------------------------------------------------------------------------
 
-from typing import Final, List, Tuple
+from typing import Final, Tuple, List, Optional
 import array as arr
 import socket
 
@@ -35,6 +35,22 @@ class PacketTool:
     # PacketTool::__init__
     #
 
+    """
+        Note regarding Assert:
+
+            Mypy is STUPID. When a reference is declared like 'self.byteOut: Optional[socket] = None'
+            then Mypy sometimes complains later (but NOT always!!!) with:
+
+                Item "None" of Optional[] has no attribute
+
+            To shut up the warning, assert that the variable is not None before using it in that method:
+
+                assert self.byteOut is not None
+
+            Sometimes required, sometimes not...yet another mystery of Python and Mypy.
+
+    """
+
     def __init__(self, pThisDeviceIdentifier: int):
 
         self.IN_BUFFER_SIZE: Final[int] = 1024
@@ -51,7 +67,7 @@ class PacketTool:
 
         self.outBuffer = arr.array('B')
 
-        i: int = 0
+        i = 0
 
         while i <= self.OUT_BUFFER_SIZE:
             self.outBuffer.append(0)
@@ -61,9 +77,9 @@ class PacketTool:
 
         self.reset()
 
-        self.byteIn: CircularBuffer = type(None)
+        self.byteIn: Optional[CircularBuffer] = None
 
-        self.byteOut: socket = None
+        self.byteOut: Optional[socket.socket] = None
 
         self.TIMEOUT: Final[int] = 50
         self.timeOutProcess: int = 0      # use this one in the packet process functions
@@ -101,7 +117,7 @@ class PacketTool:
     # PacketTool::setStreams
     #
 
-    def setStreams(self, pInputStream: CircularBuffer, pOutputStream: socket):
+    def setStreams(self, pInputStream: CircularBuffer, pOutputStream: socket.socket):
 
         """
             Sets the input and output streams for the communication port.
@@ -259,7 +275,7 @@ class PacketTool:
     # PacketTool::checkForPacketHeaderAvailable
     #
 
-    def checkForPacketHeaderAvailable(self):
+    def checkForPacketHeaderAvailable(self) -> int:
 
         """
             Checks to see if a header is available in the com buffer. At least 6 bytes must be available
@@ -285,22 +301,26 @@ class PacketTool:
             There is no way to verify the header until the entire packet is read. The packet checksum
             includes the header, so at that time the entire packet can be validated or tossed.
 
+            :return: always returns 0
+            :rtype: int
         """
 
+        assert self.byteIn is not None
+
         if self.byteIn.available() < 7:
-            return
+            return 0
 
         self.pktChecksum = 0
 
         if self.byteIn.retrieve() != 0xaa:
             self.resync()
-            return
+            return 0
 
         self.pktChecksum += 0xaa
 
         if self.byteIn.retrieve() != 0x55:
             self.resync()
-            return
+            return 0
 
         self.pktChecksum += 0x55
 
@@ -331,6 +351,8 @@ class PacketTool:
         self.numDataBytesPlusChecksumByte = self.numPktDataBytes + 1
 
         self.headerValid = True
+
+        return 0
 
     # end of PacketTool::checkForPacketHeaderAvailable
     # --------------------------------------------------------------------------------------------------
@@ -376,6 +398,8 @@ class PacketTool:
             :return:    true if the next value in byteIn matches pTargetValue, false otherwise
             :rtype:     bool
          """
+
+        assert self.byteIn is not None  # see note in this file 'Note regarding Assert' for details
 
         peekVal: int = self.byteIn.peek()
 
@@ -555,12 +579,15 @@ class PacketTool:
 
         totalSent: int = 0
 
+        assert self.byteOut is not None    # see note in this file 'Note regarding Assert' for details
+
         while totalSent < pNumBytesToSend:
 
-            sent = self.byteOut.send(self.outBuffer[totalSent:pNumBytesToSend])
+            sent = self.byteOut.send(self.outBuffer[totalSent:pNumBytesToSend].tobytes())
+
             if sent == 0:
                 raise SocketBroken("Error 381: Socket Connection Broken!")
-            totalSent = totalSent + sent
+            totalSent += sent
 
         return True
 
@@ -725,7 +752,7 @@ class PacketTool:
     # PacketTool::parseUnsignedByteFromPacket
     #
 
-    def parseUnsignedByteFromPacket(self, pIndex: int) -> (PacketStatusEnum, int, int):
+    def parseUnsignedByteFromPacket(self, pIndex: int) -> Tuple[PacketStatusEnum, int, int]:
 
         """
 
@@ -764,7 +791,7 @@ class PacketTool:
     # PacketTool::parseIntegerFromDuplexPacket
     #
 
-    def parseDuplexIntegerFromPacket(self, pIndex: int) -> (PacketStatusEnum, int, int):
+    def parseDuplexIntegerFromPacket(self, pIndex: int) -> Tuple[PacketStatusEnum, int, int]:
 
         """
  
@@ -813,354 +840,17 @@ class PacketTool:
 
         copy = self.signExtend(copy, 16)
 
+        status: PacketStatusEnum
+
         if value == copy:
-            status: PacketStatusEnum = PacketStatusEnum.PACKET_VALID
+            status = PacketStatusEnum.PACKET_VALID
         else:
-            status: PacketStatusEnum = PacketStatusEnum.DUPLEX_MATCH_ERROR
+            status = PacketStatusEnum.DUPLEX_MATCH_ERROR
 
         return status, pIndex, value
 
 # end of PacketTool::parseDuplexIntegerFromPacket
 # --------------------------------------------------------------------------------------------------
-
-#
-# //--------------------------------------------------------------------------------------------------
-# // PacketTool::sendBytes
-# //
-# /**
-#  * Sends a variable number of bytes (one or more) to the remote device, prepending a valid header
-#  * and appending the appropriate checksum.
-#  *
-#  * Does nothing if comPort not open.
-#  *
-#  * NOTE: C++ Variadic functions (those with variable number of parameters) force you to use
-#  * a variable type of at least size int for the "...". If you try to use char, uint8_t, etc. the
-#  * compiler will generate a warning and the code will fail.
-#  *
-#  * @param pDestAddress		the address of the destination device
-#  * @param pPacketType		the packet type
-#  * @param pNumBytes			the number of bytes to be sent
-#  *							the maximum allowable value is 255; if greater then will be set to 255
-#  * @param ...		the list of bytes to be sent; these actually must be ints and cannot be > 255!!!
-#  *
-#  * @return					true on success, false on failure
-#  *
-#  */
-#
-# boolean sendBytes(int pDestAddress, PacketTypeEnum pPacketType, byte... pBytes)
-# {
-#
-# 	if(byteOut == null){ return(false); }
-#
-# 	int numBytes = pBytes.length;
-#
-# 	if(numBytes > 255){ numBytes = 255; }
-#
-# 	int x = prepareHeader(outBuffer, pDestAddress, pPacketType, numBytes);
-#
-# 	int i;
-#
-#     for(i=0; i<numBytes; i++){ outBuffer[x++] = pBytes[i]; }
-#
-# 	int checksum = 0;
-#
-#     for(int j=0; j<x; j++){ checksum += outBuffer[j]; }
-#
-#     //calculate checksum and put at end of buffer
-#     outBuffer[x++] = (byte)(0x100 - (byte)(checksum & 0xff));
-#
-#     //send packet to remote
-#     if (byteOut != null) {
-#         try{
-#               byteOut.write(outBuffer, 0 /*offset*/, x);
-#               byteOut.flush();
-#         }
-#         catch (IOException e) {
-#             logSevere(e.getMessage() + " - Error: 422");
-# 			return(false);
-#         }
-#     }
-#
-# 	return(true);
-#
-# }//end of PacketTool::sendBytes
-# //--------------------------------------------------------------------------------------------------
-#
-# //--------------------------------------------------------------------------------------------------
-# // PacketTool::sendIntegersPacket
-# //
-#  /**
-#  *
-#  * Sends a variable number of two-byte signed integers to the remote device, prepending a valid
-#  * header and appending the appropriate checksum.
-#  *
-#  * All integers must be -32768<value<32767 or function will return with error.
-#  *
-#  * The integers are sent using Big Endian order (MSB first).
-#  *
-#  * If pDuplexMode is true, each integer will be sent twice to allow for verification by the
-#  * receiver. Each integer will be immediately followed by a copy of the integer.
-#  *
-#  * Does nothing if comPort not open.
-#  *
-#  * @param pDestAddress		the address of the destination device
-#  * @param pPacketType		the packet type
-#  * @param pDuplexMode		if true then each value will be sent twice
-#  * @param pValues			the values to be sent; each must be -32768<value<32767; the maximum
-#  *							number of values which can be sent is 127 if pDuplexMode = false
-#  *							and 63 if pDuplexMode = true
-#  *
-#  * @return					true on success; false on send failure or if any value is out of
-#  *							range or if too many values specified
-#  *
-#  */
-#
-# boolean sendIntegersPacket(int pDestAddress, PacketTypeEnum pPacketType, boolean pDuplexMode,
-# 																				 int... pValues)
-# {
-#
-# 	if(byteOut == null){ return(false); }
-#
-# 	int numValues = pValues.length;
-#
-# 	byte [] buf = null;
-#
-# 	if(!pDuplexMode){
-# 		if(numValues > 127){ return(false); }
-# 		buf = new byte[numValues * 2];
-# 	}
-#
-# 	if(pDuplexMode){
-# 		if(numValues > 63){ return(false); }
-# 		buf = new byte[numValues * 4];
-# 	}
-#
-# 	int x = 0;
-#
-# 	for(int i=0; i<numValues; i++){
-#
-# 		buf[x++] = (byte) ((pValues[i] >> 8) & 0xff);
-# 		buf[x++] = (byte) (pValues[i] & 0xff);
-#
-# 		if(pDuplexMode){
-# 			buf[x++] = (byte) ((pValues[i] >> 8) & 0xff);
-# 			buf[x++] = (byte) (pValues[i] & 0xff);
-# 		}
-#
-# 	}
-#
-# 	boolean status = sendBytes(pDestAddress, pPacketType, buf);
-#
-# 	return(status);
-#
-# }//end of PacketTool::sendIntegersPacket
-# //--------------------------------------------------------------------------------------------------
-#
-# //--------------------------------------------------------------------------------------------------
-# // PacketTool::sendDuplexIntegersPacket
-# //
-#  /**
-#  * Convenience method to call sendIntegersPacket with pDuplexMode set true.
-#  *
-#  * Sends a variable number of two-byte signed integers to the remote device, prepending a valid
-#  * header and appending the appropriate checksum.
-#  *
-#  * All integers must be -32768<value<32767 or function will return with error.
-#  *
-#  * The integers are sent using Big Endian order (MSB first).
-#  *
-#  * Each integer will be sent twice to allow for verification by the receiver. Each integer will be
-#  * immediately followed by a copy of the integer.
-#  *
-#  * Does nothing if comPort not open.
-#  *
-#  * @param pDestAddress		the address of the destination device
-#  * @param pPacketType		the packet type
-#  * @param pValues			the values to be sent; each must be -32768<value<32767; the maximum
-#  *							number of values which can be sent is 127 if pDuplexMode = false
-#  *							and 63 if pDuplexMode = true
-#  *
-#  * @return					true on success; false on send failure or if any value is out of
-#  *							range or if too many values specified
-#  *
-#  */
-#
-# boolean sendDuplexIntegersPacket(int pDestAddress, PacketTypeEnum pPacketType, int... pValues)
-# {
-#
-# 	boolean status = sendIntegersPacket(pDestAddress, pPacketType, true, pValues);
-#
-# 	return(status);
-#
-# }//end of PacketTool::sendDuplexIntegersPacket
-# //--------------------------------------------------------------------------------------------------
-#
-# //--------------------------------------------------------------------------------------------------
-# // PacketTool::waitForNumberOfBytes
-# //
-# /**
-#  * Waits until pNumBytes number of data bytes are available in the socket or until the specified
-#  * number of milliseconds pTimeOutMillis has passed.
-#  *
-#  * @param pNumBytes			the number of bytes to wait for
-#  * @param pTimeOutMillis	the maximum number of milliseconds to wait
-#  * @return					the number of bytes available or -1 if time out occurred or com error
-#  *
-#  */
-#
-# int PacketTool(int pNumBytes, int pTimeOutMillis)
-# {
-#
-# 	long startTime = System.currentTimeMillis();
-#
-# 	try{
-# 		while((System.currentTimeMillis() - startTime) < pTimeOutMillis){
-# 			if (byteIn.available() >= pNumBytes) {return(byteIn.available());}
-# 		}
-# 	}catch (IOException e) {
-# 		logSevere(e.getMessage() + " - Error: 528");
-# 		return(-1);
-#     }
-#
-# 	return(-1);
-#
-# }//end of PacketTool::waitForNumberOfBytes
-# //--------------------------------------------------------------------------------------------------
-#
-# //--------------------------------------------------------------------------------------------------
-# // PacketTool::readBytes
-# //
-# /**
-#  * Retrieves pNumBytes number of data bytes from the stream and stores them in inBuffer.
-#  * Returns the number of characters placed in the buffer. A 0 means no valid data was found.
-#  * Will timeout based on previous call to setTimeout(SERIAL_TIMEOUT_MILLIS).
-#  *
-#  * @param pNumBytes	number of bytes to read
-#  * @return			number of bytes retrieved from the socket; if the attempt times out returns 0
-#  *
-#  */
-#
-# int readBytes(int pNumBytes)
-# {
-#
-# 	try{
-# 		return(byteIn.read(inBuffer, 0, pNumBytes));
-# 	} catch (IOException e) {
-# 		logSevere(e.getMessage() + " - Error: 556");
-# 		return(0);
-#     }
-#
-# }//end of PacketTool::readBytes
-# //-----------------------------------------------------------------------------
-#
-# //-----------------------------------------------------------------------------
-# // PacketTool::processDataPackets
-# //
-# // The amount of time the function is to wait for a packet is specified by
-# // pTimeOut.  Each count of pTimeOut equals 10 ms.
-# //
-# // See processOneDataPacket notes for more info.
-# //
-#
-# public int processDataPackets(boolean pWaitForPkt, int pTimeOut)
-# {
-#
-#     int x = 0;
-#
-#     //process packets until there is no more data available
-#
-#     // if pWaitForPkt is true, only call once or an infinite loop will occur
-#     // because the subsequent call will still have the flag set but no data
-#     // will ever be coming because this same thread which is now blocked is
-#     // sometimes the one requesting data
-#
-#     //wip mks -- is the above true? explain better or change the functionality
-#
-#     if (pWaitForPkt) {
-#         return processOneDataPacket(pWaitForPkt, pTimeOut);
-#     }
-#     else {
-#         while ((x = processOneDataPacket(pWaitForPkt, pTimeOut)) != -1){}
-#     }
-#
-#     return x;
-#
-# }//end of PacketTool::processDataPackets
-# //-----------------------------------------------------------------------------
-#
-# //-----------------------------------------------------------------------------
-# // PacketTool::processOneDataPacket
-# //
-# // This function processes a single data packet if it is available.  If
-# // pWaitForPkt is true, the function will wait until data is available.
-# //
-# // This function should be overridden by sub-classes to provide specialized
-# // functionality.
-# //
-#
-# public int processOneDataPacket(boolean pWaitForPkt, int pTimeOut)
-# {
-#
-#     return(0);
-#
-# }//end of PacketTool::processOneDataPacket
-# //-----------------------------------------------------------------------------
-#
-# //-----------------------------------------------------------------------------
-# // PacketTool::waitSleep
-# //
-# // Sleeps for pTime milliseconds.
-# //
-#
-# public void waitSleep(int pTime)
-# {
-#
-#     try {Thread.sleep(pTime);} catch (InterruptedException e) { }
-#
-# }//end of PacketTool::waitSleep
-# //-----------------------------------------------------------------------------
-#
-# //-----------------------------------------------------------------------------
-# // PacketTool::logStatus
-# //
-# // Writes various status and error messages to the log window.
-# //
-#
-# public void logStatus(ThreadSafeLogger pLogger)
-# {
-#
-# }//end of PacketTool::logStatus
-# //-----------------------------------------------------------------------------
-#
-# //-----------------------------------------------------------------------------
-# // PacketTool::logSevere
-# //
-# // Logs pMessage with level SEVERE using the Java logger.
-# //
-#
-# void logSevere(String pMessage)
-# {
-#
-#     Logger.getLogger(getClass().getName()).log(Level.SEVERE, pMessage);
-#
-# }//end of PacketTool::logSevere
-# //-----------------------------------------------------------------------------
-#
-# //-----------------------------------------------------------------------------
-# // PacketTool::logStackTrace
-# //
-# // Logs stack trace info for exception pE with pMessage at level SEVERE using
-# // the Java logger.
-# //
-#
-# void logStackTrace(String pMessage, Exception pE)
-# {
-#
-#     Logger.getLogger(getClass().getName()).log(Level.SEVERE, pMessage, pE);
-#
-# }//end of PacketTool::logStackTrace
-# //-----------------------------------------------------------------------------
-#
 
 # end of class PacketTool
 # ----------------------------------------------------------------------------------------------------------------------

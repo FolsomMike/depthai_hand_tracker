@@ -65,16 +65,20 @@ class CircularBuffer:
     # CircularBuffer::reset
     #
 
-    def reset(self):
+    def reset(self) -> int:
 
         """
             Resets the buffer by setting insert and retrieve pointers to 0. Existing data is not actually cleared from
             the buffer, but resetting the pointers renders any existing data moot.
 
+            :return: always returns 0
+            :rtype: int
         """
 
-        self.nextInsertIndex: int = 0
-        self.nextRetrieveIndex: int = 0
+        self.nextInsertIndex = 0
+        self.nextRetrieveIndex = 0
+
+        return 0
 
     # end of CircularBuffer::reset
     # --------------------------------------------------------------------------------------------------
@@ -122,7 +126,7 @@ class CircularBuffer:
 
         self.buffer[self.nextInsertIndex] = pValue
 
-        self.nextInsertIndex = self.nextInsertIndex + 1
+        self.nextInsertIndex += 1
 
         if self.nextInsertIndex == self.bufferSize:
             self.nextInsertIndex = 0
@@ -153,7 +157,7 @@ class CircularBuffer:
 
         value = self.buffer[self.nextRetrieveIndex]
 
-        self.nextRetrieveIndex = self.nextRetrieveIndex + 1
+        self.nextRetrieveIndex += 1
 
         if self.nextRetrieveIndex == self.bufferSize:
             self.nextRetrieveIndex = 0
