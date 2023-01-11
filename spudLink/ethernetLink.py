@@ -44,16 +44,22 @@ class EthernetLink:
     # EthernetLink::__init__
     #
 
-    def __init__(self, pRemoteDescriptiveName: str):
+    def __init__(self, pRemoteDescriptiveName: str, pPort: int):
 
         """
             EthernetLink initializer.
 
             :param pRemoteDescriptiveName: a human friendly name for the connected remote device
             :type pRemoteDescriptiveName: str
+
+            :param pPort: the ethernet port this device should listen on
+            :type pPort: int
+
         """
 
         self.remoteDescriptiveName = pRemoteDescriptiveName
+        self.port: int = pPort
+
         self.connected: bool = False
 
         self.receiveBuf = CircularBuffer(RECEIVE_BUFFER_SIZE)
@@ -64,15 +70,13 @@ class EthernetLink:
         # remoteAddress -> (remote Address, remote port)
         self.remoteAddress: Tuple[str, int] = ("", 0)
 
-        # todo mks ~ 4243 should NOT be hardcoded...client code should inject!
-
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind(('', 4243))
+        self.server_socket.bind(('', self.port))
         self.server_socket.listen(1)
         self.server_socket_list: List[socket.socket] = [self.server_socket]
 
-        print("Listening for Ethernet connection request on port 4243.")
+        print("Listening for Ethernet connection request on port ", self.port)
 
     # end of EthernetLink::__init__
     # --------------------------------------------------------------------------------------------------
@@ -244,16 +248,16 @@ class EthernetLink:
 
         self.connected = False
 
+        assert self.clientSocket is not None  # see note in this file 'Note regarding Assert' for details
+
         try:
-            if self.clientSocket is not None:
-                self.clientSocket.shutdown(socket.SHUT_RDWR)
+            self.clientSocket.shutdown(socket.SHUT_RDWR)
         except OSError:
             print("OSError on socket shutdown...will attempt to close anyway...")
             print("  this is usually OSError: [Errno 107] Transport endpoint is not connected...")
             print("***************************************************************************************")
         try:
-            if self.clientSocket is not None:
-                self.clientSocket.close()
+            self.clientSocket.close()
         except OSError:
             raise SocketBroken("Error 252: Ethernet Socket Connection Broken!")
 

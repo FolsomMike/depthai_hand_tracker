@@ -35,23 +35,23 @@ class PacketTool:
     # PacketTool::__init__
     #
 
-    """
-        Note regarding Assert:
-
-            Mypy is STUPID. When a reference is declared like 'self.byteOut: Optional[socket] = None'
-            then Mypy sometimes complains later (but NOT always!!!) with:
-
-                Item "None" of Optional[] has no attribute
-
-            To shut up the warning, assert that the variable is not None before using it in that method:
-
-                assert self.byteOut is not None
-
-            Sometimes required, sometimes not...yet another mystery of Python and Mypy.
-
-    """
-
     def __init__(self, pThisDeviceIdentifier: int):
+
+        """
+            Note regarding Assert:
+
+                Mypy is STUPID. When a reference is declared like 'self.byteOut: Optional[socket] = None'
+                then Mypy sometimes complains later (but NOT always!!!) with:
+
+                    Item "None" of Optional[] has no attribute
+
+                To shut up the warning, assert that the variable is not None before using it in that method:
+
+                    assert self.byteOut is not None
+
+                Sometimes required, sometimes not...yet another mystery of Python and Mypy.
+
+        """
 
         self.IN_BUFFER_SIZE: Final[int] = 1024
 
@@ -303,6 +303,7 @@ class PacketTool:
 
             :return: always returns 0
             :rtype: int
+
         """
 
         assert self.byteIn is not None
@@ -647,6 +648,49 @@ class PacketTool:
         return self.sendOutBuffer(x)
 
     # end of PacketTool::sendString
+    # --------------------------------------------------------------------------------------------------
+
+    # ------------------------------------------------------------------------------------------------
+    # PacketTool::sendBytes
+    #
+
+    def sendBytes(self, pDestAddress: int, pPacketType: PacketTypeEnum, pBytes: bytes) -> bool:
+
+        """
+            Sends a bytes object containing one or more bytes to the remote device, prepending a valid header and
+            appending the appropriate checksum.
+
+            :param pDestAddress: the address of the remote device
+            :type pDestAddress:  int
+            :param pPacketType: the packet type code
+            :type pPacketType:  PacketTypeEnum
+            :param pBytes:      the bytes object containing one or more bytes to send
+            :type pBytes:       bytes
+            :return:            true if no error, false on error
+            :rtype:             bool
+
+            :raises: SocketBroken:  if the socket is closed or becomes inoperable
+
+         """
+
+        msgLength: int = len(pBytes)
+
+        x: int = self.prepareHeader(pDestAddress, pPacketType, msgLength)
+
+        i: int = 0
+
+        while i < msgLength:
+            self.outBuffer[x] = pBytes[i]
+            i += 1
+            x += 1
+            if x == self.OUT_BUFFER_SIZE - 2:
+                break
+
+        x = self.calculateChecksumAndStoreInBuffer(x)
+
+        return self.sendOutBuffer(x)
+
+    # end of PacketTool::sendBytes
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------

@@ -68,7 +68,9 @@ class ControllerHandler:
 
         self.prepareForProgramShutdownFunction: Callable = pPrepareForProgramShutdownFunction
 
-        self.ethernetLink = EthernetLink(pRemoteDescriptiveName)
+        self.port: Final[int] = 4243
+
+        self.ethernetLink = EthernetLink(pRemoteDescriptiveName, self.port)
 
         self.pktRcvCount = 0
 
@@ -554,7 +556,7 @@ class ControllerHandler:
             self.remoteDeviceIdentifier,
             PacketTypeEnum.HAND_GESTURE_DATA, handsData)
 
-        print("transmit hand data")   # debug mks
+        # print("transmit hand data")   # debug mks
 
     # end of ControllerHandler::sendHandDataToHost
     # --------------------------------------------------------------------------------------------------
