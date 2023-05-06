@@ -348,6 +348,8 @@ class ControllerHandler:
         else:
             pHand.little_state = self.UNKNOWN_DIGIT_POSITION
 
+        # print(pHand.thumb_state)          # debug mks ~ put this in to print thumb state to the Services terminal
+
     # end of ControllerHandler::inferFingerPositions
     # --------------------------------------------------------------------------------------------------
 
