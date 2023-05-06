@@ -1,5 +1,33 @@
 #!/usr/bin/env python3
 
+# --------------------------------------------------------------------------------------------------
+#
+# ~ How to run this in PyCharm ~
+#
+# This WILL run in PyCharm on Windows with the Oak-D-Lite connected to USB-C port.
+#
+# In the lower left corner of PyCharm, click 'All Services'. There are multiple run configurations listed, each
+# with different command line parameters passed to the program on start:
+#
+# with video ~ shows skeleton hands over video, some processing done on computer
+#
+# no video - hand skeleton only ~ shows skeleton hands only, no video shown, ALL processing done on camera unit (edge
+#        mode)
+#
+# server mode - no display at all, sends data to host ~ no skeleton hands drawn, no video shown,  ALL processing done
+#       on camera unit (edge mode), data is sent to Ethernet host with out display by this program
+#
+# oakDLiteGestureRecognizer ~ this one might reappear, not used, can be deleted ~ no command line parameters
+#
+# ~ Connecting from Spud Main Pi on the same Windows Computer ~
+#
+# Edit 'profile selection.config' in the Main Pi program root folder and select profile:
+#
+#       hardware profile=on the debug computer with Local Simulated Devices
+#
+# Start this program in PyCharm and then start the Main Pi program and 'Connect' in the Oak-D-Lite menu.
+#
+
 import cv2
 
 from HandTrackerRenderer import HandTrackerRenderer
