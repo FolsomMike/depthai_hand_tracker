@@ -1,10 +1,13 @@
 import numpy as np
+from collections import namedtuple
 
+from numpy.lib.arraysetops import isin
 import mediapipe_utils as mpu
 import depthai as dai
 import cv2
 from pathlib import Path
-from FPS import FPS
+from FPS import FPS, now
+import time
 import sys
 from string import Template
 import marshal
@@ -16,13 +19,12 @@ LANDMARK_MODEL_FULL = str(SCRIPT_DIR / "models/hand_landmark_full_sh4.blob")
 LANDMARK_MODEL_LITE = str(SCRIPT_DIR / "models/hand_landmark_lite_sh4.blob")
 LANDMARK_MODEL_SPARSE = str(SCRIPT_DIR / "models/hand_landmark_sparse_sh4.blob")
 DETECTION_POSTPROCESSING_MODEL = str(SCRIPT_DIR / "custom_models/PDPostProcessing_top2_sh1.blob")
-TEMPLATE_MANAGER_SCRIPT_SOLO = str(SCRIPT_DIR / "template_manager_script_solo.py - MKS")
-TEMPLATE_MANAGER_SCRIPT_DUO = str(SCRIPT_DIR / "template_manager_script_duo.py - MKS")
+TEMPLATE_MANAGER_SCRIPT_SOLO = str(SCRIPT_DIR / "template_manager_script_solo.py")
+TEMPLATE_MANAGER_SCRIPT_DUO = str(SCRIPT_DIR / "template_manager_script_duo.py")
 
 
 def to_planar(arr: np.ndarray, shape: tuple) -> np.ndarray:
-    # noinspection PyUnresolvedReferences
-    return cv2.resize(arr, shape).transpose(2, 0, 1).flatten()
+    return cv2.resize(arr, shape).transpose(2,0,1).flatten()
 
 
 class HandTracker:
@@ -44,14 +46,13 @@ class HandTracker:
                     - 'lite' for LANDMARK_MODEL_LITE,
                     - 'sparse' for LANDMARK_MODEL_SPARSE,
                     - a path of a blob file.  
-    - lm_score_thresh : confidence score to determine whether landmarks prediction is reliable(a float between 0 and 1).
+    - lm_score_thresh : confidence score to determine whether landmarks prediction is reliable (a float between 0 and 1).
     - use_world_landmarks: boolean. The landmarks model yields 2 types of 3D coordinates : 
                     - coordinates expressed in pixels in the image, always stored in hand.landmarks,
                     - coordinates expressed in meters in the world, stored in hand.world_landmarks 
                     only if use_world_landmarks is True.
     - pp_model: path to the detection post processing model,
-    - solo: boolean, when True detect one hand max (much faster since we run the pose detection model only if no hand
-                    was detected in the previous frame)
+    - solo: boolean, when True detect one hand max (much faster since we run the pose detection model only if no hand was detected in the previous frame)
                     On edge mode, always True
     - xyz : boolean, when True calculate the (x, y, z) coords of the detected palms.
     - crop : boolean which indicates if square cropping on source images is applied or not
@@ -59,7 +60,7 @@ class HandTracker:
     - resolution : sensor resolution "full" (1920x1080) or "ultra" (3840x2160),
     - internal_frame_height : when using the internal color camera, set the frame height (calling setIspScale()).
                     The width is calculated accordingly to height and depends on value of 'crop'
-    - use_gesture : boolean, when True, recognize hand poses from a predefined set of poses
+    - use_gesture : boolean, when True, recognize hand poses froma predefined set of poses
                     (ONE, TWO, THREE, FOUR, FIVE, OK, PEACE, FIST)
     - use_handedness_average : boolean, when True the handedness is the average of the last collected handednesses.
                     This brings robustness since the inferred robustness is not reliable on ambiguous hand poses.
@@ -70,10 +71,9 @@ class HandTracker:
                     the next time you will run it. 'single_hand_tolerance_thresh' is the number of 
                     frames during only one hand is detected before palm detection is run again.   
     - lm_nb_threads : 1 or 2 (default=2), number of inference threads for the landmark model
-    - use_same_image (Edge Duo mode only) : boolean, when True, use the same image when inferring the landmarks of the
-                    2 hands
+    - use_same_image (Edge Duo mode only) : boolean, when True, use the same image when inferring the landmarks of the 2 hands
                     (setReusePreviousImage(True) in the ImageManip node before the landmark model). 
-                    When True, FPS is significantly higher but the skeleton may appear shifted on one of the 2 hands.
+                    When True, the FPS is significantly higher but the skeleton may appear shifted on one of the 2 hands.
     - stats : boolean, when True, display some statistics when exiting.   
     - trace : int, 0 = no trace, otherwise print some debug messages or show output of ImageManip nodes
             if trace & 1, print application level info like number of palm detections,
@@ -84,30 +84,27 @@ class HandTracker:
                       
     """
     def __init__(self, input_src=None,
-                 pd_model=PALM_DETECTION_MODEL,
-                 pd_score_thresh=0.5, pd_nms_thresh=0.3,
-                 use_lm=True,
-                 lm_model="lite",
-                 lm_score_thresh=0.5,
-                 use_world_landmarks=False,
-                 pp_model=DETECTION_POSTPROCESSING_MODEL,
-                 solo=True,
-                 xyz=False,
-                 crop=False,
-                 internal_fps=None,
-                 resolution="full",
-                 internal_frame_height=640,
-                 use_gesture=False,
-                 use_handedness_average=True,
-                 single_hand_tolerance_thresh=10,
-                 use_same_image=True,
-                 lm_nb_threads=2,
-                 stats=False,
-                 trace=0
-                 ):
-
-        self.pd_input_length: int = 0
-        self.lm_input_length: int = 0
+                pd_model=PALM_DETECTION_MODEL, 
+                pd_score_thresh=0.5, pd_nms_thresh=0.3,
+                use_lm=True,
+                lm_model="lite",
+                lm_score_thresh=0.5,
+                use_world_landmarks=False,
+                pp_model = DETECTION_POSTPROCESSING_MODEL,
+                solo=True,
+                xyz=False,
+                crop=False,
+                internal_fps=None,
+                resolution="full",
+                internal_frame_height=640,
+                use_gesture=False,
+                use_handedness_average=True,
+                single_hand_tolerance_thresh=10,
+                use_same_image=True,
+                lm_nb_threads=2,
+                stats=False,
+                trace=0
+                ):
 
         self.use_lm = use_lm
         if not use_lm:
@@ -120,7 +117,7 @@ class HandTracker:
         elif lm_model == "lite":
             self.lm_model = LANDMARK_MODEL_LITE
         elif lm_model == "sparse":
-            self.lm_model = LANDMARK_MODEL_SPARSE
+                self.lm_model = LANDMARK_MODEL_SPARSE
         else:
             self.lm_model = lm_model
         print(f"Landmark blob           : {self.lm_model}")
@@ -149,11 +146,11 @@ class HandTracker:
 
         self.device = dai.Device()
 
-        if input_src is None or input_src == "rgb" or input_src == "rgb_laconic":
+        if input_src == None or input_src == "rgb" or input_src == "rgb_laconic":
             # Note that here (in Host mode), specifying "rgb_laconic" has no effect
             # Color camera frames are systematically transferred to the host
-            self.input_type = "rgb"  # OAK* internal color camera
-            self.laconic = input_src == "rgb_laconic"  # Camera frames are not sent to the host
+            self.input_type = "rgb" # OAK* internal color camera
+            self.laconic = input_src == "rgb_laconic" # Camera frames are not sent to the host
             if resolution == "full":
                 self.resolution = (1920, 1080)
             elif resolution == "ultra":
@@ -191,10 +188,9 @@ class HandTracker:
                     self.internal_fps = 39
             else:
                 self.internal_fps = internal_fps 
-            print(f"Internal camera FPS set to: {self.internal_fps}")
+            print(f"Internal camera FPS set to: {self.internal_fps}") 
 
-            # Used when saving the output in a video file. Should be close to the real fps
-            self.video_fps = self.internal_fps
+            self.video_fps = self.internal_fps # Used when saving the output in a video file. Should be close to the real fps
 
             if self.crop:
                 self.frame_size, self.scale_nd = mpu.find_isp_scale_params(internal_frame_height, self.resolution)
@@ -202,8 +198,7 @@ class HandTracker:
                 self.pad_w = self.pad_h = 0
                 self.crop_w = (int(round(self.resolution[0] * self.scale_nd[0] / self.scale_nd[1])) - self.img_w) // 2
             else:
-                width, self.scale_nd = mpu.find_isp_scale_params(internal_frame_height * self.resolution[0] /
-                                                                 self.resolution[1], self.resolution, is_height=False)
+                width, self.scale_nd = mpu.find_isp_scale_params(internal_frame_height * self.resolution[0] / self.resolution[1], self.resolution, is_height=False)
                 self.img_h = int(round(self.resolution[1] * self.scale_nd[0] / self.scale_nd[1]))
                 self.img_w = int(round(self.resolution[0] * self.scale_nd[0] / self.scale_nd[1]))
                 self.pad_h = (self.img_w - self.img_h) // 2
@@ -239,12 +234,13 @@ class HandTracker:
         self.nb_failed_lm_inferences = 0
         self.nb_frames_lm_inference_after_landmarks_ROI = 0
         self.nb_frames_no_hand = 0
+        
 
     def create_pipeline(self):
         print("Creating pipeline...")
         # Start defining a pipeline
         pipeline = dai.Pipeline()
-        pipeline.setOpenVINOVersion(version=dai.OpenVINO.Version.VERSION_2021_4)
+        pipeline.setOpenVINOVersion(version = dai.OpenVINO.Version.VERSION_2021_4)
         self.pd_input_length = 128
 
         # ColorCamera
@@ -274,9 +270,7 @@ class HandTracker:
             cam.video.link(cam_out.input)
 
         # Define manager script node
-        # noinspection PyTypeChecker
         manager_script = pipeline.create(dai.node.Script)
-        # noinspection PyUnresolvedReferences
         manager_script.setScript(self.build_manager_script())
 
         if self.xyz:
@@ -319,7 +313,6 @@ class HandTracker:
 
             stereo.depth.link(spatial_location_calculator.inputDepth)
 
-            # noinspection PyUnresolvedReferences
             manager_script.outputs['spatial_location_config'].link(spatial_location_calculator.inputConfig)
             spatial_location_calculator.out.link(manager_script.inputs['spatial_data'])
 
@@ -331,7 +324,6 @@ class HandTracker:
         pre_pd_manip.inputImage.setQueueSize(1)
         pre_pd_manip.inputImage.setBlocking(False)
         cam.preview.link(pre_pd_manip.inputImage)
-        # noinspection PyUnresolvedReferences
         manager_script.outputs['pre_pd_manip_cfg'].link(pre_pd_manip.inputConfig)
 
         # For debugging
@@ -356,7 +348,6 @@ class HandTracker:
         # Define link to send result to host 
         manager_out = pipeline.create(dai.node.XLinkOut)
         manager_out.setStreamName("manager_out")
-        # noinspection PyUnresolvedReferences
         manager_script.outputs['host'].link(manager_out.input)
 
         # Define landmark pre processing image manip
@@ -375,7 +366,6 @@ class HandTracker:
             pre_lm_manip_out.setStreamName("pre_lm_manip_out")
             pre_lm_manip.out.link(pre_lm_manip_out.input)
 
-        # noinspection PyUnresolvedReferences
         manager_script.outputs['pre_lm_manip_cfg'].link(pre_lm_manip.inputConfig)
 
         # Define landmark model
@@ -390,40 +380,38 @@ class HandTracker:
         return pipeline        
     
     def build_manager_script(self):
-
-        """
+        '''
         The code of the scripting node 'manager_script' depends on :
             - the score threshold,
             - the video frame shape
         So we build this code from the content of the file template_manager_script_*.py which is a python template
-        """
-
+        '''
         # Read the template
         with open(TEMPLATE_MANAGER_SCRIPT_SOLO if self.solo else TEMPLATE_MANAGER_SCRIPT_DUO, 'r') as file:
             template = Template(file.read())
         
         # Perform the substitution
         code = template.substitute(
-                    _TRACE1="node.warn" if self.trace & 1 else "#",
-                    _TRACE2="node.warn" if self.trace & 2 else "#",
-                    _pd_score_thresh=self.pd_score_thresh,
-                    _lm_score_thresh=self.lm_score_thresh,
-                    _pad_h=self.pad_h,
-                    _img_h=self.img_h,
-                    _img_w=self.img_w,
-                    _frame_size=self.frame_size,
-                    _crop_w=self.crop_w,
-                    _IF_XYZ="" if self.xyz else '"""',
-                    _IF_USE_HANDEDNESS_AVERAGE="" if self.use_handedness_average else '"""',
-                    _single_hand_tolerance_thresh=self.single_hand_tolerance_thresh,
-                    _IF_USE_SAME_IMAGE="" if self.use_same_image else '"""',
-                    _IF_USE_WORLD_LANDMARKS="" if self.use_world_landmarks else '"""',
+                    _TRACE1 = "node.warn" if self.trace & 1 else "#",
+                    _TRACE2 = "node.warn" if self.trace & 2 else "#",
+                    _pd_score_thresh = self.pd_score_thresh,
+                    _lm_score_thresh = self.lm_score_thresh,
+                    _pad_h = self.pad_h,
+                    _img_h = self.img_h,
+                    _img_w = self.img_w,
+                    _frame_size = self.frame_size,
+                    _crop_w = self.crop_w,
+                    _IF_XYZ = "" if self.xyz else '"""',
+                    _IF_USE_HANDEDNESS_AVERAGE = "" if self.use_handedness_average else '"""',
+                    _single_hand_tolerance_thresh= self.single_hand_tolerance_thresh,
+                    _IF_USE_SAME_IMAGE = "" if self.use_same_image else '"""',
+                    _IF_USE_WORLD_LANDMARKS = "" if self.use_world_landmarks else '"""',
         )
         # Remove comments and empty lines
         import re
         code = re.sub(r'"{3}.*?"{3}', '', code, flags=re.DOTALL)
         code = re.sub(r'#.*', '', code)
-        code = re.sub(r'\n\s*\n', '\n', code)
+        code = re.sub('\n\s*\n', '\n', code)
         # For debugging
         if self.trace & 8:
             with open("tmp_code.py", "w") as file:
@@ -437,26 +425,22 @@ class HandTracker:
         hand.rect_y_center_a = res["rect_center_y"][hand_idx] * self.frame_size
         hand.rect_w_a = hand.rect_h_a = res["rect_size"][hand_idx] * self.frame_size
         hand.rotation = res["rotation"][hand_idx] 
-        hand.rect_points = mpu.rotated_rect_to_points(hand.rect_x_center_a, hand.rect_y_center_a, hand.rect_w_a,
-                                                      hand.rect_h_a, hand.rotation)
+        hand.rect_points = mpu.rotated_rect_to_points(hand.rect_x_center_a, hand.rect_y_center_a, hand.rect_w_a, hand.rect_h_a, hand.rotation)
         hand.lm_score = res["lm_score"][hand_idx]
         hand.handedness = res["handedness"][hand_idx]
         hand.label = "right" if hand.handedness > 0.5 else "left"
-        hand.norm_landmarks = np.array(res['rrn_lms'][hand_idx]).reshape(-1, 3)
-        hand.landmarks = (np.array(res["sqn_lms"][hand_idx]) * self.frame_size).reshape(-1, 2).astype(np.int)
+        hand.norm_landmarks = np.array(res['rrn_lms'][hand_idx]).reshape(-1,3)
+        hand.landmarks = (np.array(res["sqn_lms"][hand_idx]) * self.frame_size).reshape(-1,2).astype(np.int32)
         if self.xyz:
             hand.xyz = np.array(res["xyz"][hand_idx])
             hand.xyz_zone = res["xyz_zone"][hand_idx]
-
-        # If we added padding to make the image square, we need to remove this padding from landmark coordinates and
-        # from rect_points
-
+        # If we added padding to make the image square, we need to remove this padding from landmark coordinates and from rect_points
         if self.pad_h > 0:
-            hand.landmarks[:, 1] -= self.pad_h
+            hand.landmarks[:,1] -= self.pad_h
             for i in range(len(hand.rect_points)):
                 hand.rect_points[i][1] -= self.pad_h
         if self.pad_w > 0:
-            hand.landmarks[:, 0] -= self.pad_w
+            hand.landmarks[:,0] -= self.pad_w
             for i in range(len(hand.rect_points)):
                 hand.rect_points[i][0] -= self.pad_w
 
@@ -464,8 +448,7 @@ class HandTracker:
         if self.use_world_landmarks:
             hand.world_landmarks = np.array(res["world_lms"][hand_idx]).reshape(-1, 3)
 
-        if self.use_gesture:
-            mpu.recognize_gesture(hand)
+        if self.use_gesture: mpu.recognize_gesture(hand)
 
         return hand
 
@@ -477,29 +460,23 @@ class HandTracker:
             video_frame = np.zeros((self.img_h, self.img_w, 3), dtype=np.uint8)
         else:
             in_video = self.q_video.get()
-            # noinspection PyUnresolvedReferences
             video_frame = in_video.getCvFrame()       
 
         # For debugging
         if self.trace & 4:
             pre_pd_manip = self.q_pre_pd_manip_out.tryGet()
             if pre_pd_manip:
-                # noinspection PyUnresolvedReferences
                 pre_pd_manip = pre_pd_manip.getCvFrame()
-                # noinspection PyUnresolvedReferences
                 cv2.imshow("pre_pd_manip", pre_pd_manip)
             pre_lm_manip = self.q_pre_lm_manip_out.tryGet()
             if pre_lm_manip:
-                # noinspection PyUnresolvedReferences
                 pre_lm_manip = pre_lm_manip.getCvFrame()
-                # noinspection PyUnresolvedReferences
                 cv2.imshow("pre_lm_manip", pre_lm_manip)
 
         # Get result from device
-        # noinspection PyUnresolvedReferences
         res = marshal.loads(self.q_manager_out.get().getData())
         hands = []
-        for i in range(len(res.get("lm_score", []))):
+        for i in range(len(res.get("lm_score",[]))):
             hand = self.extract_hand_data(res, i)
             hands.append(hand)
 
@@ -509,7 +486,7 @@ class HandTracker:
                 self.nb_frames_pd_inference += 1
             else:
                 if res["nb_lm_inf"] > 0:
-                    self.nb_frames_lm_inference_after_landmarks_ROI += 1
+                     self.nb_frames_lm_inference_after_landmarks_ROI += 1
             if res["nb_lm_inf"] == 0:
                 self.nb_frames_no_hand += 1
             else:
@@ -519,24 +496,17 @@ class HandTracker:
 
         return video_frame, hands, None
 
+
     def exit(self):
         self.device.close()
         # Print some stats
         if self.stats:
             nb_frames = self.fps.nb_frames()
             print(f"FPS : {self.fps.get_global():.1f} f/s (# frames = {nb_frames})")
-            print(f"# frames w/ no hand           : "
-                  f"{self.nb_frames_no_hand} ({100*self.nb_frames_no_hand/nb_frames:.1f}%)")
-            print(f"# frames w/ palm detection    : {self.nb_frames_pd_inference}"
-                  f" ({100*self.nb_frames_pd_inference/nb_frames:.1f}%)")
-            print(f"# frames w/ landmark inference : {self.nb_frames_lm_inference}"
-                  f" ({100*self.nb_frames_lm_inference/nb_frames:.1f}%)- # after palm detection: "
-                  f"{self.nb_frames_lm_inference - self.nb_frames_lm_inference_after_landmarks_ROI}"
-                  f" - # after landmarks ROI prediction: {self.nb_frames_lm_inference_after_landmarks_ROI}")
+            print(f"# frames w/ no hand           : {self.nb_frames_no_hand} ({100*self.nb_frames_no_hand/nb_frames:.1f}%)")
+            print(f"# frames w/ palm detection    : {self.nb_frames_pd_inference} ({100*self.nb_frames_pd_inference/nb_frames:.1f}%)")
+            print(f"# frames w/ landmark inference : {self.nb_frames_lm_inference} ({100*self.nb_frames_lm_inference/nb_frames:.1f}%)- # after palm detection: {self.nb_frames_lm_inference - self.nb_frames_lm_inference_after_landmarks_ROI} - # after landmarks ROI prediction: {self.nb_frames_lm_inference_after_landmarks_ROI}")
             if not self.solo:
-                print(f"On frames with at least one landmark inference, average number of landmarks inferences/frame:"
-                      f" {self.nb_lm_inferences/self.nb_frames_lm_inference:.2f}")
+                print(f"On frames with at least one landmark inference, average number of landmarks inferences/frame: {self.nb_lm_inferences/self.nb_frames_lm_inference:.2f}")
             if self.nb_lm_inferences:
-                print(f"# lm inferences: {self.nb_lm_inferences} - # failed lm inferences:"
-                      f" {self.nb_failed_lm_inferences}"
-                      f" ({100*self.nb_failed_lm_inferences/self.nb_lm_inferences:.1f}%)")
+                print(f"# lm inferences: {self.nb_lm_inferences} - # failed lm inferences: {self.nb_failed_lm_inferences} ({100*self.nb_failed_lm_inferences/self.nb_lm_inferences:.1f}%)")
