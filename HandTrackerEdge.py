@@ -431,6 +431,14 @@ class HandTracker:
         hand.label = "right" if hand.handedness > 0.5 else "left"
         hand.norm_landmarks = np.array(res['rrn_lms'][hand_idx]).reshape(-1,3)
         hand.landmarks = (np.array(res["sqn_lms"][hand_idx]) * self.frame_size).reshape(-1,2).astype(np.int32)
+
+        # hand.norm_landmarks is a version which always has the fingers rotated to the top even if the owner is
+        # holding them downwards...we want to use unrotated hand so if owner is not holding them upright they will be
+        # ignored in regard to recognizing gestures...easiest way to to this is to set hand.norm_landmarks to the
+        # unrotated hand.landmarks so all the gesture recognition is performed on the unrotated version
+
+        hand.norm_landmarks = hand.landmarks  # Folsom Robotics Company ~ MKS
+
         if self.xyz:
             hand.xyz = np.array(res["xyz"][hand_idx])
             hand.xyz_zone = res["xyz_zone"][hand_idx]
