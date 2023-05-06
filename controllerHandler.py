@@ -194,6 +194,11 @@ class ControllerHandler:
             Infers the state of each digit based on relative positions of the landmarks of each digit as well as the
             angle of the line between appropriate landmarks.
 
+            This version uses hand.landmarks instead of hand.norm_landmarks. The norm set has the hand always rotated
+            with fingers upwards, even if they are being held downwards. Since we only want gestures to be recognized
+            when the hands are oriented upward to avoid unwanted signals, the unrotated version is used to parse
+            gestures. A downward hand returns as the gesture 'zero'.
+
             Also infers left hand vs right hand based on positions of thumb and little finger. This is only accurate
             if palms are facing camera. The HandRegion.handedness value is overwritten to signal left/right:
                 0.0 = left, 1.0 = right
@@ -215,22 +220,22 @@ class ControllerHandler:
         #   value [5][0]  is the X coordinate ([0]) of the end of the thumb ([5])
         #   value [20][0] is the X coordinate ([0]) of the end of the little finger ([20])
 
-        if pHand.norm_landmarks[5][0] < pHand.norm_landmarks[20][0]:
+        if pHand.landmarks[5][0] < pHand.landmarks[20][0]:
             pHand.handedness = 0.0
         else:
             pHand.handedness = 1.0
 
         # calculate distances and angles for the thumb
 
-        d_3_5 = self.calculateDistance2Points(pHand.norm_landmarks[3], pHand.norm_landmarks[5])
-        d_2_3 = self.calculateDistance2Points(pHand.norm_landmarks[2], pHand.norm_landmarks[3])
+        d_3_5 = self.calculateDistance2Points(pHand.landmarks[3], pHand.landmarks[5])
+        d_2_3 = self.calculateDistance2Points(pHand.landmarks[2], pHand.landmarks[3])
 
         angle0 = \
-            self.calculateAngleFrom3Points(pHand.norm_landmarks[0], pHand.norm_landmarks[1], pHand.norm_landmarks[2])
+            self.calculateAngleFrom3Points(pHand.landmarks[0], pHand.landmarks[1], pHand.landmarks[2])
         angle1 = \
-            self.calculateAngleFrom3Points(pHand.norm_landmarks[1], pHand.norm_landmarks[2], pHand.norm_landmarks[3])
+            self.calculateAngleFrom3Points(pHand.landmarks[1], pHand.landmarks[2], pHand.landmarks[3])
         angle2 = \
-            self.calculateAngleFrom3Points(pHand.norm_landmarks[2], pHand.norm_landmarks[3], pHand.norm_landmarks[4])
+            self.calculateAngleFrom3Points(pHand.landmarks[2], pHand.landmarks[3], pHand.landmarks[4])
 
         pHand.thumb_angle = angle0+angle1+angle2
 
@@ -241,30 +246,30 @@ class ControllerHandler:
 
         # infer finger states from relative positions of each digit's landmarks
 
-        if pHand.norm_landmarks[8][1] < pHand.norm_landmarks[7][1] < pHand.norm_landmarks[6][1]:
+        if pHand.landmarks[8][1] < pHand.landmarks[7][1] < pHand.landmarks[6][1]:
             pHand.index_state = 1
-        elif pHand.norm_landmarks[6][1] < pHand.norm_landmarks[8][1]:
+        elif pHand.landmarks[6][1] < pHand.landmarks[8][1]:
             pHand.index_state = 0
         else:
             pHand.index_state = -1
 
-        if pHand.norm_landmarks[12][1] < pHand.norm_landmarks[11][1] < pHand.norm_landmarks[10][1]:
+        if pHand.landmarks[12][1] < pHand.landmarks[11][1] < pHand.landmarks[10][1]:
             pHand.middle_state = 1
-        elif pHand.norm_landmarks[10][1] < pHand.norm_landmarks[12][1]:
+        elif pHand.landmarks[10][1] < pHand.landmarks[12][1]:
             pHand.middle_state = 0
         else:
             pHand.middle_state = -1
 
-        if pHand.norm_landmarks[16][1] < pHand.norm_landmarks[15][1] < pHand.norm_landmarks[14][1]:
+        if pHand.landmarks[16][1] < pHand.landmarks[15][1] < pHand.landmarks[14][1]:
             pHand.ring_state = 1
-        elif pHand.norm_landmarks[14][1] < pHand.norm_landmarks[16][1]:
+        elif pHand.landmarks[14][1] < pHand.landmarks[16][1]:
             pHand.ring_state = 0
         else:
             pHand.ring_state = -1
 
-        if pHand.norm_landmarks[20][1] < pHand.norm_landmarks[19][1] < pHand.norm_landmarks[18][1]:
+        if pHand.landmarks[20][1] < pHand.landmarks[19][1] < pHand.landmarks[18][1]:
             pHand.little_state = 1
-        elif pHand.norm_landmarks[18][1] < pHand.norm_landmarks[20][1]:
+        elif pHand.landmarks[18][1] < pHand.landmarks[20][1]:
             pHand.little_state = 0
         else:
             pHand.little_state = -1
