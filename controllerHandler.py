@@ -185,10 +185,50 @@ class ControllerHandler:
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
-    # ControllerHandler::translateLandmarksToFingerPositions
+    # ControllerHandler::translateLandmarksToThumbPosition
     #
 
-    def translateLandmarksToFingerPositions(self, pHand: mpu.HandRegion):
+    def translateLandmarksToThumbPosition(self, pHand: mpu.HandRegion):
+
+        """
+            Infers the state of the thumb based on relative positions of the landmarks of each thumb.
+
+            See translateLandmarksToDigitPositions for more details.
+
+            :param pHand:                      a HandRegion which contains data about a hand
+            :type pHand: mpu.HandRegion
+
+        """
+
+        #   value [5][0]  is the X coordinate ([0]) of the end of the thumb ([5])
+
+        # calculate distances and angles for the thumb
+
+        d_3_5 = self.calculateDistance2Points(pHand.landmarks[3], pHand.landmarks[5])
+        d_2_3 = self.calculateDistance2Points(pHand.landmarks[2], pHand.landmarks[3])
+
+        angle0 = \
+            self.calculateAngleFrom3Points(pHand.landmarks[0], pHand.landmarks[1], pHand.landmarks[2])
+        angle1 = \
+            self.calculateAngleFrom3Points(pHand.landmarks[1], pHand.landmarks[2], pHand.landmarks[3])
+        angle2 = \
+            self.calculateAngleFrom3Points(pHand.landmarks[2], pHand.landmarks[3], pHand.landmarks[4])
+
+        pHand.thumb_angle = angle0+angle1+angle2
+
+        if angle0+angle1+angle2 > 460 and d_3_5 / d_2_3 > 1.2:
+            pHand.thumb_state = 1
+        else:
+            pHand.thumb_state = 0
+
+    # end of ControllerHandler::translateLandmarksToThumbPosition
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::translateLandmarksToDigitPositions
+    #
+
+    def translateLandmarksToDigitPositions(self, pHand: mpu.HandRegion):
 
         """
             Infers the state of each digit based on relative positions of the landmarks of each digit as well as the
@@ -225,24 +265,7 @@ class ControllerHandler:
         else:
             pHand.handedness = 1.0
 
-        # calculate distances and angles for the thumb
-
-        d_3_5 = self.calculateDistance2Points(pHand.landmarks[3], pHand.landmarks[5])
-        d_2_3 = self.calculateDistance2Points(pHand.landmarks[2], pHand.landmarks[3])
-
-        angle0 = \
-            self.calculateAngleFrom3Points(pHand.landmarks[0], pHand.landmarks[1], pHand.landmarks[2])
-        angle1 = \
-            self.calculateAngleFrom3Points(pHand.landmarks[1], pHand.landmarks[2], pHand.landmarks[3])
-        angle2 = \
-            self.calculateAngleFrom3Points(pHand.landmarks[2], pHand.landmarks[3], pHand.landmarks[4])
-
-        pHand.thumb_angle = angle0+angle1+angle2
-
-        if angle0+angle1+angle2 > 460 and d_3_5 / d_2_3 > 1.2:
-            pHand.thumb_state = 1
-        else:
-            pHand.thumb_state = 0
+        self.translateLandmarksToThumbPosition(pHand)
 
         # infer finger states from relative positions of each digit's landmarks
 
@@ -274,7 +297,7 @@ class ControllerHandler:
         else:
             pHand.little_state = -1
 
-    # end of ControllerHandler::translateLandmarksToFingerPositions
+    # end of ControllerHandler::translateLandmarksToDigitPositions
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
@@ -310,11 +333,9 @@ class ControllerHandler:
 
         """
 
-        # decode the finger positions
-        # todo mks ~ need to decode positions ourselves to specify more angles
-        #   note that mediapipe::recognize_gesture does do angle calculations, so can be used for reference
+        # decode the hand digit positions
 
-        self.translateLandmarksToFingerPositions(pHand)
+        self.translateLandmarksToDigitPositions(pHand)
 
         # translate mediapipe codes to digit pointing angles
 
