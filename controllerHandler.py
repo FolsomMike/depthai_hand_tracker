@@ -17,6 +17,7 @@
 
 import os
 import time
+import math
 import sys
 import traceback
 import numpy as np
@@ -83,8 +84,62 @@ class ControllerHandler:
         self.MAX_SHORT_INT: Final[int] = 32767
 
         self.UNKNOWN_DIGIT_POSITION: Final[int] = self.MAX_SHORT_INT
-
         self.DIGIT_RETRACTED: Final[int] = self.MAX_SHORT_INT - 1
+        self.DIGIT_EXTENDED_UP: Final[int] = 0
+        self.DIGIT_EXTENDED_SIDE: Final[int] = 90
+
+        # hand directions upwards/sideways
+
+        self.UPWARDS: Final[int] = 0
+        self.SIDEWAYS: Final[int] = 1
+
+        # left right handedness
+
+        self.LEFT_HAND: Final[float] = 0.0
+        self.RIGHT_HAND: Final[float] = 1.0
+
+        self.LEFT_HAND_INT: Final[int] = 0
+        self.RIGHT_HAND_INT: Final[int] = 1
+
+        # index positions of the x,y coordinates
+
+        self.LM_X_COORD: Final[int] = 0
+        self.LM_Y_COORD: Final[int] = 1
+
+        # index positions of the landmarks of the digits
+        #
+        # Example usage to retrieve x,y of tip of thumb:
+        #
+        # thumbX = hand.landmarks[self.LM_THUMB_TIP][LM_X_COORD]
+        # thumbY = hand.landmarks[self.LM_THUMB_TIP][LM_Y_COORD]
+        #
+
+        self.LM_PALM_BASE: Final[int] = 0
+
+        self.LM_THUMB_BASE: Final[int] = 1
+        self.LM_THUMB_BASE_ABUT: Final[int] = 2
+        self.LM_THUMB_TIP_ABUT: Final[int] = 3
+        self.LM_THUMB_TIP: Final[int] = 4
+
+        self.LM_INDEX_BASE: Final[int] = 5
+        self.LM_INDEX_BASE_ABUT: Final[int] = 6
+        self.LM_INDEX_TIP_ABUT: Final[int] = 7
+        self.LM_INDEX_TIP: Final[int] = 8
+
+        self.LM_MIDDLE_BASE: Final[int] = 9
+        self.LM_MIDDLE_BASE_ABUT: Final[int] = 10
+        self.LM_MIDDLE_TIP_ABUT: Final[int] = 11
+        self.LM_MIDDLE_TIP: Final[int] = 12
+
+        self.LM_RING_BASE: Final[int] = 13
+        self.LM_RING_BASE_ABUT: Final[int] = 14
+        self.LM_RING_TIP_ABUT: Final[int] = 15
+        self.LM_RING_TIP: Final[int] = 16
+
+        self.LM_LITTLE_BASE: Final[int] = 17
+        self.LM_LITTLE_BASE_ABUT: Final[int] = 18
+        self.LM_LITTLE_TIP_ABUT: Final[int] = 19
+        self.LM_LITTLE_TIP: Final[int] = 20
 
     # end of ControllerHandler::__init__
     # --------------------------------------------------------------------------------------------------
@@ -185,41 +240,160 @@ class ControllerHandler:
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::calculateAngleOfLineInDegrees
+    #
+
+    def calculateAngleOfLineInDegrees(self, pX1: int, pY1: int, pX2: int, pY2: int) -> float:
+
+        """
+
+            Calculates the angle of a line in degrees. The line is specified by the endpoints pX1,pY1 to pX2,pY2.
+
+            :param pX1:                      x coordinate of the starting endpoint of the line
+            :type: float
+
+            :param pY1:                      y coordinate of the starting endpoint of the line
+            :type: float
+
+            :param pX2:                      x coordinate of the ending endpoint of the line
+            :type: float
+
+            :param pY2:                      y coordinate of the ending endpoint of the line
+            :type: float
+
+           :return: the angle of the line from 0~360 degrees
+           :rtype: float
+
+        """
+
+        dx: float = pX2 - pX1
+        dy: float = pY2 - pY1
+
+        theta = math.atan2(dy, dx)
+        angle = math.degrees(theta)  # angle is in (-180, 180]
+
+        if angle < 0:
+            angle = 360 + angle
+
+        return angle
+
+    # end of ControllerHandler::calculateAngleOfLineInDegrees
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::inferDirectionOfHand
+    #
+
+    def inferDirectionOfHand(self, pHand: mpu.HandRegion) -> int:
+
+        """
+
+            Infers the direction of the hand as upwards or sideways based on relative positions and angles of the
+            landmarks.
+
+            When hands are held sideways, it is assumed that the fingers are pointing inward (towards the opposite
+            hand). It is uncomfortable to point the fingers outwards from the body or downwards with the palms facing
+            the camera, so those options are ignored.
+
+            Possible results (assumes palms facing camera):
+
+                self.UPWARDS   -> fingers upward
+                self.SIDEWAYS  -> fingers sideways (towards center of both hands)
+
+            :param pHand:                      a HandRegion which contains data about a hand
+            :type: mpu.HandRegion
+
+           :return: the angle of the hand: self.UPWARDS -> fingers upwards; self.SIDEWAYS -> fingers sideways
+           :rtype: int
+
+        """
+
+        # calculate angle of the line from base joint of index finger to base joint of little finger
+
+        indexBaseX = pHand.landmarks[self.LM_INDEX_BASE][self.LM_X_COORD]
+        indexBaseY = pHand.landmarks[self.LM_INDEX_BASE][self.LM_Y_COORD]
+
+        littleBaseX = pHand.landmarks[self.LM_LITTLE_BASE][self.LM_X_COORD]
+        littleBaseY = pHand.landmarks[self.LM_LITTLE_BASE][self.LM_Y_COORD]
+
+        handAngle: float = self.calculateAngleOfLineInDegrees(indexBaseX, indexBaseY, littleBaseX, littleBaseY)
+
+        handDirection: int
+
+        if 45 < handAngle < 135:
+            handDirection = self.SIDEWAYS
+        else:
+            handDirection = self.UPWARDS
+
+        return handDirection
+
+    # end of ControllerHandler::inferDirectionOfHand
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
     # ControllerHandler::translateLandmarksToThumbPosition
     #
 
-    def translateLandmarksToThumbPosition(self, pHand: mpu.HandRegion):
+    def translateLandmarksToThumbPosition(self, pHand: mpu.HandRegion, pHandDirection: int):
 
         """
             Infers the state of the thumb based on relative positions of the landmarks of each thumb.
+
+            Stores the result in pHand.thumb_state.
+
+            When hand is held upwards, the x coordinates of the tip of the thumb and the joint next to the tip
+            (the abutting joint) are used to determine if the thumb is extended or not.
 
             See translateLandmarksToDigitPositions for more details.
 
             :param pHand:                      a HandRegion which contains data about a hand
             :type pHand: mpu.HandRegion
 
+            :param pHandDirection:             direction hand is pointing, self.UPWARDS or self.SIDEWAYS
+            :type pHandDirection: int
+
         """
 
-        #   value [5][0]  is the X coordinate ([0]) of the end of the thumb ([5])
+        thumbTipX: int = pHand.landmarks[self.LM_THUMB_TIP][self.LM_X_COORD]
+        thumbTipY: int = pHand.landmarks[self.LM_THUMB_TIP][self.LM_Y_COORD]
+        thumbTipAbutX: int = pHand.landmarks[self.LM_THUMB_TIP_ABUT][self.LM_X_COORD]
+        thumbTipAbutY: int = pHand.landmarks[self.LM_THUMB_TIP_ABUT][self.LM_Y_COORD]
 
-        # calculate distances and angles for the thumb
+        if pHand.handedness == self.LEFT_HAND:
 
-        d_3_5 = self.calculateDistance2Points(pHand.landmarks[3], pHand.landmarks[5])
-        d_2_3 = self.calculateDistance2Points(pHand.landmarks[2], pHand.landmarks[3])
+            if pHandDirection == self.UPWARDS:
+                if thumbTipX < thumbTipAbutX:
+                    pHand.thumb_state = self.DIGIT_EXTENDED_SIDE
+                    return
+                else:
+                    pHand.thumb_state = self.DIGIT_RETRACTED
+                    return
+            else: #  hand held sideways
+                if thumbTipY < thumbTipAbutY:
+                    pHand.thumb_state = self.DIGIT_EXTENDED_UP
+                    return
+                else:
+                    pHand.thumb_state = self.DIGIT_RETRACTED
+                    return
 
-        angle0 = \
-            self.calculateAngleFrom3Points(pHand.landmarks[0], pHand.landmarks[1], pHand.landmarks[2])
-        angle1 = \
-            self.calculateAngleFrom3Points(pHand.landmarks[1], pHand.landmarks[2], pHand.landmarks[3])
-        angle2 = \
-            self.calculateAngleFrom3Points(pHand.landmarks[2], pHand.landmarks[3], pHand.landmarks[4])
+        else: # right hand
 
-        pHand.thumb_angle = angle0+angle1+angle2
+            if pHandDirection == self.UPWARDS:
+                if thumbTipX > thumbTipAbutX:
+                    pHand.thumb_state = self.DIGIT_EXTENDED_SIDE
+                    return
+                else:
+                    pHand.thumb_state = self.DIGIT_RETRACTED
+                    return
+            else: #  hand held sideways
+                if thumbTipY < thumbTipAbutY:
+                    pHand.thumb_state = self.DIGIT_EXTENDED_UP
+                    return
+                else:
+                    pHand.thumb_state = self.DIGIT_RETRACTED
+                    return
 
-        if angle0+angle1+angle2 > 460 and d_3_5 / d_2_3 > 1.2:
-            pHand.thumb_state = 1
-        else:
-            pHand.thumb_state = 0
+        pHand.thumb_state = self.DIGIT_RETRACTED
 
     # end of ControllerHandler::translateLandmarksToThumbPosition
     # --------------------------------------------------------------------------------------------------
@@ -247,55 +421,82 @@ class ControllerHandler:
             AI model results to determine left/right - it is a bit less accurate, but works regardless of whether the
             palm/back of hand is facing the camera.
 
+            The state of the digits are encoded as follows:
+
+                32767   unknown state ~ cannot be inferred
+                32766   retracted
+                0       extended 0 degrees straight up
+                45      extended and rotated  45 degrees CCW from straight up
+                90      extended and rotated  90 degrees CCW from straight up
+                135     extended and rotated 135 degrees CCW from straight up
+                180     extended and rotated 180 degrees CCW from straight up - pointing straight down
+
+                -45     extended and rotated  45 degrees CW from straight up
+                -90     extended and rotated  90 degrees CW from straight up
+                -135    extended and rotated 135 degrees CW from straight up
+
             :param pHand:                      a HandRegion which contains data about a hand
             :type pHand: mpu.HandRegion
 
         """
 
-        # infer left or right hand based on relative positions of the X coordinates of the tips of the thumb and
+        # infer left or right hand based on relative positions of the X coordinates of the bases of the thumb and
         # the little finger (only accurate if palms facing camera) - if thumb is left of little finger on the screen,
         # it is the left hand, otherwise it is right hand
         # note that the hands are mirrored on the screen in relation to the person viewing their hands
 
-        #   value [5][0]  is the X coordinate ([0]) of the end of the thumb ([5])
-        #   value [20][0] is the X coordinate ([0]) of the end of the little finger ([20])
+        #   value [5][0]  is the X coordinate ([0]) of the base of the thumb ([5])
+        #   value [20][0] is the X coordinate ([0]) of the base of the little finger ([20])
 
         if pHand.landmarks[5][0] < pHand.landmarks[20][0]:
-            pHand.handedness = 0.0
+            pHand.handedness = self.LEFT_HAND
         else:
-            pHand.handedness = 1.0
+            pHand.handedness = self.RIGHT_HAND
 
-        self.translateLandmarksToThumbPosition(pHand)
+        whichHand: str
+
+        handDirection: int = self.inferDirectionOfHand(pHand)
+
+        self.translateLandmarksToThumbPosition(pHand, handDirection)
 
         # infer finger states from relative positions of each digit's landmarks
 
         if pHand.landmarks[8][1] < pHand.landmarks[7][1] < pHand.landmarks[6][1]:
-            pHand.index_state = 1
+            pHand.index_state = self.DIGIT_EXTENDED_UP
         elif pHand.landmarks[6][1] < pHand.landmarks[8][1]:
-            pHand.index_state = 0
+            pHand.index_state = self.DIGIT_RETRACTED
         else:
-            pHand.index_state = -1
+            pHand.index_state = self.UNKNOWN_DIGIT_POSITION
 
         if pHand.landmarks[12][1] < pHand.landmarks[11][1] < pHand.landmarks[10][1]:
-            pHand.middle_state = 1
+            pHand.middle_state = self.DIGIT_EXTENDED_UP
         elif pHand.landmarks[10][1] < pHand.landmarks[12][1]:
-            pHand.middle_state = 0
+            pHand.middle_state = self.DIGIT_RETRACTED
         else:
-            pHand.middle_state = -1
+            pHand.middle_state = self.UNKNOWN_DIGIT_POSITION
 
         if pHand.landmarks[16][1] < pHand.landmarks[15][1] < pHand.landmarks[14][1]:
-            pHand.ring_state = 1
+            pHand.ring_state = self.DIGIT_EXTENDED_UP
         elif pHand.landmarks[14][1] < pHand.landmarks[16][1]:
-            pHand.ring_state = 0
+            pHand.ring_state = self.DIGIT_RETRACTED
         else:
-            pHand.ring_state = -1
+            pHand.ring_state = self.UNKNOWN_DIGIT_POSITION
 
         if pHand.landmarks[20][1] < pHand.landmarks[19][1] < pHand.landmarks[18][1]:
-            pHand.little_state = 1
+            pHand.little_state = self.DIGIT_EXTENDED_UP
         elif pHand.landmarks[18][1] < pHand.landmarks[20][1]:
-            pHand.little_state = 0
+            pHand.little_state = self.DIGIT_RETRACTED
         else:
-            pHand.little_state = -1
+            pHand.little_state = self.UNKNOWN_DIGIT_POSITION
+
+        # wip mks ~ for now always retracted for hand held sideways...in future, look at x locs instead of y locs for
+        # finger states in the above code
+
+        if handDirection == self.SIDEWAYS:
+            pHand.index_state = self.DIGIT_RETRACTED
+            pHand.middle_state = self.DIGIT_RETRACTED
+            pHand.ring_state = self.DIGIT_RETRACTED
+            pHand.little_state = self.DIGIT_RETRACTED
 
     # end of ControllerHandler::translateLandmarksToDigitPositions
     # --------------------------------------------------------------------------------------------------
@@ -312,7 +513,7 @@ class ControllerHandler:
 
             Note that the normally extended thumb will be inferred at 90 or -90 degrees (pointing sideways).
 
-            All digits on all hands in List pHands are decoded.
+            All digits for pHand are decoded.
 
             The state of the digits are encoded as follows:
 
@@ -373,8 +574,6 @@ class ControllerHandler:
             pHand.little_state = 0
         else:
             pHand.little_state = self.UNKNOWN_DIGIT_POSITION
-
-        # print(pHand.thumb_state)          # debug mks ~ put this in to print thumb state to the Services terminal
 
     # end of ControllerHandler::inferFingerPositions
     # --------------------------------------------------------------------------------------------------
@@ -503,12 +702,12 @@ class ControllerHandler:
             # add the digit extended/retracted states to the list
 
             # infer the state of the digits for use in inferring gestures
-            self.inferFingerPositions(hand)
+            self.translateLandmarksToDigitPositions(hand)
 
-            if hand.handedness == 0.0:
-                whichHand = 0
+            if hand.handedness == self.LEFT_HAND:
+                whichHand = self.LEFT_HAND_INT
             else:
-                whichHand = 1
+                whichHand = self.RIGHT_HAND_INT
 
             handsData.append((hand.thumb_state, hand.index_state))
             handsData.append((hand.middle_state, hand.ring_state))
