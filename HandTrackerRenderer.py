@@ -16,9 +16,13 @@ LINES_BODY = [[4,2],[2,0],[0,1],[1,3],
 class HandTrackerRenderer:
     def __init__(self, 
                 tracker,
+                 pDisplayLocally,
                 output=None):
 
         self.tracker = tracker
+
+        # MKS Folsom -- added to allow disabling of frame display on local machine when not needed to decrease CPU load
+        self.displayLocally = pDisplayLocally
 
         # Rendering flags
         if self.tracker.use_lm:
@@ -187,7 +191,10 @@ class HandTrackerRenderer:
     def waitKey(self, delay=1):
         if self.show_fps:
                 self.tracker.fps.draw(self.frame, orig=(50,50), size=1, color=(240,180,100))
-        cv2.imshow("Hand tracking", self.frame)
+
+        if (self.displayLocally):
+            cv2.imshow("Hand tracking", self.frame)
+
         if self.output:
             self.output.write(self.frame)
         key = cv2.waitKey(delay) 

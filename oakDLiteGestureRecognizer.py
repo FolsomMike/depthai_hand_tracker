@@ -27,6 +27,7 @@
 #
 # Start this program in PyCharm and then start the Main Pi program and 'Connect' in the Oak-D-Lite menu.
 #
+import sys
 
 import cv2
 
@@ -114,9 +115,16 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
 
         # in server mode, nothing is displayed by this program but data is sent to host controller
 
-        if args.server_mode:
-            key = cv2.waitKey(1)
-        else:
+        if args.hand_gestures:
+            if args.server_mode:
+                key = cv2.waitKey(1)
+            else:
+                renderer.draw(frame, hands, bag)
+                key = renderer.waitKey()
+
+        # server mode does not apply when doing motion detection
+
+        if args.hand_gestures_and_motion_detection:
             # do motion check FIRST or the quivering gesture annotations will cause motion detection
             pControllerHandler.checkForMovementOnVideoFrame(frame)
             renderer.draw(frame, hands, bag)
@@ -129,17 +137,65 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
 # ----------------------------------------------------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------------------------------------------------
+# ::validateRuntimeParameters
+#
+
+
+"""
+
+    Detects errors in the runtime parameters, such as illegal combinations.
+    
+    :return: true if parameters valid, false on error
+    :rtype: bool
+
+"""
+
+
+def validateRuntimeParameters() -> bool:
+
+    # must specify at least one mode: hand gesture OR hand gesture + motion detection
+
+    if not args.hand_gestures and not args.hand_gestures_and_motion_detection:
+        print("Error -> must specify one: --hand_gestures OR --hand_gestures_and_motion_detection")
+        return False
+
+    # must either specify hand gesture OR hand gesture + motion detection
+
+    if args.hand_gestures and args.hand_gestures_and_motion_detection:
+        print("Error -> cannot specify both --hand_gestures --hand_gestures_and_motion_detection")
+        return False
+
+    # input = rgb_laconic mode does not return video therefore it cannot be checked for motion
+
+    if args.hand_gestures_and_motion_detection and args.input == "rgb_laconic":
+        print("Error-> cannot specify both --hand_gestures_and_motion_detection and input=rbg_laconic")
+        return False
+
+    return True
+
+# end of ::validateRuntimeParameters
+# ----------------------------------------------------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------------------------------------
 # ::__main__
 #
 
 
 parser = argparse.ArgumentParser()
+
 parser.add_argument('-e', '--edge', action="store_true",
-                    help="Use Edge mode (postprocessing runs on the device)")
+                    help="Use Edge mode (most/all postprocessing runs on the Oak device)")
+
 parser_tracker = parser.add_argument_group("Tracker arguments")
 
-parser_tracker.add_argument('--server_mode', action="store_true",
-                            help="Nothing is displayed by this program but data is still sent to host.")
+parser_tracker.add_argument('--display_locally', action="store_true",
+                            help="Video from the Oak camera is displayed on the local machine but requires more CPU "
+                                 "time.")
+
+parser_tracker.add_argument('--hand_gestures', action="store_true", help="Detects hand gestures.")
+
+parser_tracker.add_argument('--hand_gestures_and_motion_detection', action="store_true",
+                            help="Detects both hand gestures and movement.")
 
 parser_tracker.add_argument('-i', '--input', type=str,
                             help="Path to video or image file to use as input (if not specified, use OAK color camera)")
@@ -178,10 +234,18 @@ parser_tracker.add_argument('-lmt', '--lm_nb_threads', type=int, choices=[1, 2],
                             help="Number of the landmark model inference threads (default=%(default)i)")
 parser_tracker.add_argument('-t', '--trace', type=int, nargs="?", const=1, default=0, 
                             help="Print some debug infos. The type of info depends on the optional argument.")
+
 parser_renderer = parser.add_argument_group("Renderer arguments")
 parser_renderer.add_argument('-o', '--output', 
                              help="Path to output video file")
+
 args = parser.parse_args()
+
+if not validateRuntimeParameters():
+    sys.exit(1)
+
+# copy a subset of the parser_renderer args to tracker_args for use by HandTracker
+
 dargs = vars(args)
 tracker_args = \
     {a: dargs[a] for a in ['pd_model', 'lm_model', 'internal_fps', 'internal_frame_height'] if dargs[a] is not None}
@@ -210,7 +274,7 @@ tracker = HandTracker(
         **tracker_args
         )
 
-renderer = HandTrackerRenderer(tracker=tracker, output=args.output)
+renderer = HandTrackerRenderer(tracker=tracker, pDisplayLocally=args.display_locally, output=args.output)
 
 controllerHandler: ControllerHandler = setupControllerHandler()
 
