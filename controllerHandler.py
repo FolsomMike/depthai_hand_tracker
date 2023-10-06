@@ -360,6 +360,8 @@ class ControllerHandler:
         thumbTipAbutX: int = pHand.landmarks[self.LM_THUMB_TIP_ABUT][self.LM_X_COORD]
         thumbTipAbutY: int = pHand.landmarks[self.LM_THUMB_TIP_ABUT][self.LM_Y_COORD]
 
+        pHand.thumb_state = self.DIGIT_RETRACTED
+
         if pHand.handedness == self.LEFT_HAND:
 
             if pHandDirection == self.UPWARDS:
@@ -393,8 +395,6 @@ class ControllerHandler:
                 else:
                     pHand.thumb_state = self.DIGIT_RETRACTED
                     return
-
-        pHand.thumb_state = self.DIGIT_RETRACTED
 
     # end of ControllerHandler::translateLandmarksToThumbPosition
     # --------------------------------------------------------------------------------------------------
