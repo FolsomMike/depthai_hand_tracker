@@ -118,6 +118,7 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
             key = cv2.waitKey(1)
         else:
             renderer.draw(frame, hands, bag)
+            pControllerHandler.checkForMovementOnVideoFrame(frame)
             key = renderer.waitKey()
 
         if key == 27 or key == ord('q'):

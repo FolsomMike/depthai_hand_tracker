@@ -15,6 +15,8 @@
 #
 # ----------------------------------------------------------------------------------------------------------------------
 
+import cv2  # todo mks ~ remove this
+
 import os
 import time
 import math
@@ -87,6 +89,8 @@ class ControllerHandler:
         self.DIGIT_RETRACTED: Final[int] = self.MAX_SHORT_INT - 1
         self.DIGIT_EXTENDED_UP: Final[int] = 0
         self.DIGIT_EXTENDED_SIDE: Final[int] = 90
+
+        self.previousFrame = np.empty([1, 1])
 
         # hand directions upwards/sideways
 
@@ -1007,6 +1011,44 @@ class ControllerHandler:
         return self.ethernetLink.disconnect()
 
     # end of ControllerHandler::disconnect
+    # --------------------------------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------------------------------
+    # ControllerHandler::checkForMovementOnVideoFrame
+    #
+
+    def checkForMovementOnVideoFrame(self, pFrame):
+
+        # convert the frame to grayscale for frame differencing
+        currentFrame = cv2.cvtColor(pFrame, cv2.COLOR_BGR2GRAY)
+
+        if self.previousFrame.shape[0] == 1:
+            self.previousFrame = currentFrame
+            return
+
+        # calculate the absolute difference between the current and previous frame
+        frameDifference = cv2.absdiff(self.previousFrame, currentFrame)
+
+        self.previousFrame = currentFrame
+
+        # apply a threshold to identify significant differences
+        _, thresholdedDiff = cv2.threshold(frameDifference, 30, 255, cv2.THRESH_BINARY)
+
+        # find contours in the threshold-applied difference image
+        contours, _ = cv2.findContours(thresholdedDiff, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # draw rectangles around moving objects
+
+        for contour in contours:
+            if cv2.contourArea(contour) > 100:  # Adjust the threshold as needed
+                x, y, w, h = cv2.boundingRect(contour)
+                cv2.rectangle(pFrame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        # the above modifies the original frame so when it gets displayed all the motion annotation will be shown
+        # thus no need to show another window here except for debugging purposes
+        # cv2.imshow("Motion Detection", pFrame)
+
+    # end of ControllerHandler::checkForMovementOnVideoFrame
     # --------------------------------------------------------------------------------------------------
 
     # --------------------------------------------------------------------------------------------------
