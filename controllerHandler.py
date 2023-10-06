@@ -273,7 +273,7 @@ class ControllerHandler:
         angle = math.degrees(theta)  # angle is in (-180, 180]
 
         if angle < 0:
-            angle = 360 + angle
+            angle += 360
 
         return angle
 
@@ -368,7 +368,7 @@ class ControllerHandler:
                 else:
                     pHand.thumb_state = self.DIGIT_RETRACTED
                     return
-            else: #  hand held sideways
+            else:  # hand held sideways
                 if thumbTipY < thumbTipAbutY:
                     pHand.thumb_state = self.DIGIT_EXTENDED_UP
                     return
@@ -376,7 +376,7 @@ class ControllerHandler:
                     pHand.thumb_state = self.DIGIT_RETRACTED
                     return
 
-        else: # right hand
+        else:  # right hand
 
             if pHandDirection == self.UPWARDS:
                 if thumbTipX > thumbTipAbutX:
@@ -385,7 +385,7 @@ class ControllerHandler:
                 else:
                     pHand.thumb_state = self.DIGIT_RETRACTED
                     return
-            else: #  hand held sideways
+            else:  # hand held sideways
                 if thumbTipY < thumbTipAbutY:
                     pHand.thumb_state = self.DIGIT_EXTENDED_UP
                     return
@@ -410,7 +410,7 @@ class ControllerHandler:
 
             This version uses hand.landmarks instead of hand.norm_landmarks. The norm set has the hand always rotated
             with fingers upwards, even if they are being held downwards. Since we only want gestures to be recognized
-            when the hands are oriented upward to avoid unwanted signals, the unrotated version is used to parse
+            when the hands are oriented upward to avoid unwanted signals, the un-rotated version is used to parse
             gestures. A downward hand returns as the gesture 'zero'.
 
             Also infers left hand vs right hand based on positions of thumb and little finger. This is only accurate
