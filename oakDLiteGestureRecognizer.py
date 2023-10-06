@@ -187,10 +187,10 @@ tracker_args = \
 
 if args.edge:
     from HandTrackerEdge import HandTracker
+    # 'use_same_image' flag is ONLY allowed with HandTrackerEdge for some reason
     tracker_args['use_same_image'] = not args.dont_force_same_image
 else:
     from HandTracker import HandTracker
-
 
 tracker = HandTracker(
         input_src=args.input, 
@@ -209,9 +209,7 @@ tracker = HandTracker(
         **tracker_args
         )
 
-renderer = HandTrackerRenderer(
-        tracker=tracker,
-        output=args.output)
+renderer = HandTrackerRenderer(tracker=tracker, output=args.output)
 
 controllerHandler: ControllerHandler = setupControllerHandler()
 
