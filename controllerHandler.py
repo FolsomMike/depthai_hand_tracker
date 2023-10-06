@@ -243,7 +243,8 @@ class ControllerHandler:
     # ControllerHandler::calculateAngleOfLineInDegrees
     #
 
-    def calculateAngleOfLineInDegrees(self, pX1: int, pY1: int, pX2: int, pY2: int) -> float:
+    @staticmethod
+    def calculateAngleOfLineInDegrees(pX1: int, pY1: int, pX2: int, pY2: int) -> float:
 
         """
 
