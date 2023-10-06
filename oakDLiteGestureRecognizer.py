@@ -117,8 +117,9 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
         if args.server_mode:
             key = cv2.waitKey(1)
         else:
-            renderer.draw(frame, hands, bag)
+            # do motion check FIRST or the quivering gesture annotations will cause motion detection
             pControllerHandler.checkForMovementOnVideoFrame(frame)
+            renderer.draw(frame, hands, bag)
             key = renderer.waitKey()
 
         if key == 27 or key == ord('q'):
