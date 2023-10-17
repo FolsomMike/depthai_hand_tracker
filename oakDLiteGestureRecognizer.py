@@ -109,7 +109,15 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
         if frame is None:
             break
 
-        status = pControllerHandler.doRunTimeTasks(hands, tracker.lm_score_thresh)
+        numMotionBlocksDetected: int = 0
+
+        if args.hand_gestures_and_motion_detection:
+            # do motion check FIRST or the quivering gesture annotations will cause motion detection
+            numMotionBlocksDetected = pControllerHandler.checkForMovementOnVideoFrame(frame)
+            renderer.draw(frame, hands, bag)
+            key = renderer.waitKey()
+
+        status = pControllerHandler.doRunTimeTasks(hands, tracker.lm_score_thresh, numMotionBlocksDetected)
         if status < 0:
             return status
 
@@ -121,14 +129,6 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
             else:
                 renderer.draw(frame, hands, bag)
                 key = renderer.waitKey()
-
-        # server mode does not apply when doing motion detection
-
-        if args.hand_gestures_and_motion_detection:
-            # do motion check FIRST or the quivering gesture annotations will cause motion detection
-            pControllerHandler.checkForMovementOnVideoFrame(frame)
-            renderer.draw(frame, hands, bag)
-            key = renderer.waitKey()
 
         if key == 27 or key == ord('q'):
             return 0
