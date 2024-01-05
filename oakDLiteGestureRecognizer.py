@@ -15,7 +15,7 @@
 #        mode)
 #
 # server mode - no display at all, sends data to host ~ no skeleton hands drawn, no video shown,  ALL processing done
-#       on camera unit (edge mode), data is sent to Ethernet host with out display by this program
+#       on camera unit (edge mode), data is sent to Ethernet host without display by this program
 #
 # oakDLiteGestureRecognizer ~ this one might reappear, not used, can be deleted ~ no command line parameters
 #
@@ -111,6 +111,8 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
 
         numMotionBlocksDetected: int = 0
 
+        key = 0
+
         if args.hand_gestures_and_motion_detection:
             # do motion check FIRST or the quivering gesture annotations will cause motion detection
             numMotionBlocksDetected = pControllerHandler.checkForMovementOnVideoFrame(frame)
@@ -124,7 +126,7 @@ def doRunTimeTasks(pControllerHandler: ControllerHandler):
         # in server mode, nothing is displayed by this program but data is sent to host controller
 
         if args.hand_gestures:
-            if args.server_mode:
+            if not args.display_locally:
                 key = cv2.waitKey(1)
             else:
                 renderer.draw(frame, hands, bag)

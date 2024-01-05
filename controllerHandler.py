@@ -51,7 +51,7 @@ class ControllerHandler:
     # ControllerHandler::__init__
     #
 
-    """"
+    """
         ControllerHandler initializer.
 
         :param pThisDeviceIdentifier: a numeric code to identify this device on the network
@@ -422,9 +422,9 @@ class ControllerHandler:
             if palms are facing camera. The HandRegion.handedness value is overwritten to signal left/right:
                 0.0 = left, 1.0 = right
 
-            Note that this is method is different than used by mediapipe to set the HandRegion.handedness...they use
-            AI model results to determine left/right - it is a bit less accurate, but works regardless of whether the
-            palm/back of hand is facing the camera.
+            Note that this is method is different from that used by mediapipe to set the HandRegion.handedness...they
+            use AI model results to determine left/right - it is a bit less accurate, but works regardless of whether
+            the palm/back of hand is facing the camera.
 
             The state of the digits are encoded as follows:
 
@@ -494,8 +494,8 @@ class ControllerHandler:
         else:
             pHand.little_state = self.UNKNOWN_DIGIT_POSITION
 
-        # wip mks ~ for now always retracted for hand held sideways...in future, look at x locs instead of y locs for
-        # finger states in the above code
+        # wip mks ~ for now always retracted for hand held sideways...in the future, look at x locs instead of y locs
+        # for finger states in the above code
 
         if handDirection == self.SIDEWAYS:
             pHand.index_state = self.DIGIT_RETRACTED
@@ -591,15 +591,21 @@ class ControllerHandler:
         Prepares data for all hands for sending to the host. This data contains various x/y locations of the key points
         of the palm and digits as well as information about whether a digit is extended or retracted.
         
-        Each x,y point is contained in a Tuple. This method returns a List of Tuples of all the data from all hands.
+        The number of blocks in the frame in which motion was detected will also be added to the data packet.
         
-        The data block in the packet to the host is a series of signed short ints (16 bits) as follows:
+        Each x,y point is contained in a Tuple. This method returns a List of Tuples of all the data from all hands.
+        This block is followed by a Tuple with data regarding motion detection in the video frame. 
+        
+        The first value of each Tuple will be sent as two bytes (signed short int) followed by the second value of that
+        Tuple as two bytes (signed short int). Thus a Tuple with (x,y) values is sent as 4 bytes.
+        
+        Thus the data block in the packet to the host is a series of signed short ints (16 bits) as follows:
         
         byte        name            purpose
         
             (first hand starts at byte 0)
          
-              0:1    valid data      0 if data is invalid, 1 if data is valid
+              0:1    valid data      0 if data is invalid, bit 1 set if data is valid
               2:3    hand width      0 if data is invalid, the width of the bounding square around the hand if valid
             
               4:5    thumb state     unknown/retracted/extended pointing angle state of the thumb      
@@ -662,29 +668,41 @@ class ControllerHandler:
 
             (next hand starts at byte 104)
             
-            104:105  valid data      0 if data is invalid, 1 if data is valid
+            104:105  valid data      0 if data is invalid, bit 1 set if data is valid
             106:107  hand width      0 if data is invalid, the width of the bounding square around the hand if valid
             ...
             ...                 { duplicate of first hand...refer to above }
             ...
+            206:207  y3 of little    y coordinate of point 3 of the little (tip)
+
+            ( motion detection data)
+            
+            208:209  number of rectangular blocks in the frame in which motion was detected
+            210:211  unused
 
 
         :param pHands:                      a List of HandRegions which contain data about the hands
         :type pHands: List[mpu.HandRegion]
+        
         :param pLandmarkScoreThreshold:     the threshold which the landmark inference score from the AI model must
                                             exceed in order for the data to be considered valid
-        :param pLandmarkScoreThreshold: float
+        :type pLandmarkScoreThreshold: float
+        
+        :param pNumBlocksOfMotion:          the number of rectangular blocks in the frame in which motion was detected
+        :type pNumBlocksOfMotion: int
         
         :return: a list of Tuples which contain data about all hands such as:
                  valid data flag, size of hand boundary, (x,y) coordinates for each keypoint of the palm
         :rtype: List[Tuple[int, int]]
+        
+        todo mks --> move this comment block inside function        
 
     """
 
     # noinspection PyUnresolvedReferences
 
-    def prepareHandDataForHost(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float)\
-            -> List[Tuple[int, int]]:
+    def prepareHandDataForHost(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float,
+                               pNumBlocksOfMotion: int) -> List[Tuple[int, int]]:
 
         handsData: List[Tuple[int, int]] = []
 
@@ -739,6 +757,8 @@ class ControllerHandler:
             for x, y in hand.landmarks[:, :2]:
                 handsData.append((x, y))
 
+        handsData.append((pNumBlocksOfMotion, 0))
+
         return handsData
 
     # end of ControllerHandler::prepareHandDataForHost
@@ -763,13 +783,19 @@ class ControllerHandler:
 
         :param pHands:                      a List of HandRegions which contain data about the hands
         :type pHands: List[mpu.HandRegion]
+        
         :param pLandmarkScoreThreshold:     the threshold which the landmark inference score from the AI model must
-                                            exceed in order for the data to be considered valid
-        :param pLandmarkScoreThreshold: float
-    
+                                            exceed in order for the data to be considered valid                                    
+        :type pLandmarkScoreThreshold: float
+        
+        :param pNumBlocksOfMotion           the number of rectangular blocks in the frame in which motion was detected
+        :type pNumBlocksOfMotion: int
+
+        todo mks --> move this comment block inside function
+
     """
 
-    def sendHandDataToHost(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float):
+    def sendHandDataToHost(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float, pNumBlocksOfMotion: int):
 
         nowTime: float = time.perf_counter()
 
@@ -780,7 +806,7 @@ class ControllerHandler:
 
         handsData: List[Tuple[int, int]]
 
-        handsData = self.prepareHandDataForHost(pHands, pLandmarkScoreThreshold)
+        handsData = self.prepareHandDataForHost(pHands, pLandmarkScoreThreshold, pNumBlocksOfMotion)
 
         # debugMKS = [(1, 2), (3, 4)] remove this
 
@@ -797,17 +823,29 @@ class ControllerHandler:
     # ControllerHandler::doRunTimeTasks
     #
 
-    def doRunTimeTasks(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float) -> int:
+    def doRunTimeTasks(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float,
+                       pNumBlocksOfMotion: int) -> int:
 
         """
             Handles communications and actions with the remote device. This function should be called often during
             runtime to allow for continuous processing.
 
             If the remote device is not currently connected, then this function will check for connection requests
-            and accept the first one to arrive. Afterwards, this function will monitor the incoming data stream for
+            and accept the first one to arrive. Afterward, this function will monitor the incoming data stream for
             packets and process them.
 
             Currently, only one remote device at a time is allowed to be connected.
+
+            :param pHands:                      a List of HandRegions which contain data about the hands
+            :type pHands: List[mpu.HandRegion]
+
+            :param pLandmarkScoreThreshold: the threshold which the landmark inference score from the AI model must
+                                            exceed in order for the data to be considered valid
+            :type pLandmarkScoreThreshold: float
+
+            :param pNumBlocksOfMotion:  the number of rectangular blocks in the frame in which motion was detected
+            :type pNumBlocksOfMotion: int
+
 
             :return: 0 if no operation performed, 1 if an operation performed, -1 on error
             :rtype: int
@@ -823,7 +861,7 @@ class ControllerHandler:
                 else:
                     return 0
             else:
-                return self.handleCommunications(pHands, pLandmarkScoreThreshold)
+                return self.handleCommunications(pHands, pLandmarkScoreThreshold, pNumBlocksOfMotion)
 
         except ConnectionResetError:
 
@@ -849,24 +887,30 @@ class ControllerHandler:
     # ControllerHandler::handleCommunications
     #
 
-    def handleCommunications(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float) -> int:
+    ##
+    #
+    # Handles communications with the remote device. This function should be called often during runtime to allow
+    # for continuous processing.
+    #
+    # This function will monitor the incoming data stream for packets and process them as they are received.
+    #
+    # @param pHands a List of HandRegions which contain data about the hands
+    #
+    # @param pLandmarkScoreThreshold   the threshold which the landmark inference score from the AI model must
+    #                                   exceed in order for the data to be considered valid
+    #
+    # @param pNumBlocksOfMotion          the number of rectangular blocks in the frame in which motion was detected
+    #
+    # @return   0 on no packet handled, 1 on packet handled, -1 on error
+    #           note that broken or disconnected sockets do NOT return an error as they are handled as a
+    #           normal part of the process
+    #
+    # @throws SocketBroken      if socket is broken - probably due to Host closing connection
+    #
+    def handleCommunications(self, pHands: List[mpu.HandRegion], pLandmarkScoreThreshold: float,
+                             pNumBlocksOfMotion: int) -> int:
 
-        """
-            Handles communications with the remote device. This function should be called often during runtime to allow
-             for continuous processing.
-
-            This function will monitor the incoming data stream for packets and process them as they are received.
-
-            :return: 0 on no packet handled, 1 on packet handled, -1 on error
-                        note that broken or disconnected sockets do NOT return an error as they are handled as a
-                        normal part of the process
-            :rtype: int
-
-            :raises: SocketBroken:  if socket is broken - probably due to Host closing connection
-
-        """
-
-        self.sendHandDataToHost(pHands, pLandmarkScoreThreshold)
+        self.sendHandDataToHost(pHands, pLandmarkScoreThreshold, pNumBlocksOfMotion)
 
         self.ethernetLink.doRunTimeTasks()
 
@@ -1017,14 +1061,16 @@ class ControllerHandler:
     # ControllerHandler::checkForMovementOnVideoFrame
     #
 
-    def checkForMovementOnVideoFrame(self, pFrame):
+    # todo mks --> add comments
+
+    def checkForMovementOnVideoFrame(self, pFrame) -> int:
 
         # convert the frame to grayscale for frame differencing
         currentFrame = cv2.cvtColor(pFrame, cv2.COLOR_BGR2GRAY)
 
         if self.previousFrame.shape[0] == 1:
             self.previousFrame = currentFrame
-            return
+            return 0
 
         # calculate the absolute difference between the current and previous frame
         frameDifference = cv2.absdiff(self.previousFrame, currentFrame)
@@ -1039,14 +1085,19 @@ class ControllerHandler:
 
         # draw rectangles around moving objects
 
+        numMotionBlocksDetected: int = 0
+
         for contour in contours:
             if cv2.contourArea(contour) > 100:  # Adjust the threshold as needed
                 x, y, w, h = cv2.boundingRect(contour)
                 cv2.rectangle(pFrame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                numMotionBlocksDetected += 1
 
         # the above modifies the original frame so when it gets displayed all the motion annotation will be shown
         # thus no need to show another window here except for debugging purposes
         # cv2.imshow("Motion Detection", pFrame)
+
+        return numMotionBlocksDetected
 
     # end of ControllerHandler::checkForMovementOnVideoFrame
     # --------------------------------------------------------------------------------------------------
